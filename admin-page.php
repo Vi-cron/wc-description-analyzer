@@ -1,4 +1,14 @@
-<?php if (!defined('ABSPATH')) exit; ?>
+<?php
+/**
+ * Шаблон страницы администратора для WooCommerce Description Analyzer
+ *
+ * @package WC_Description_Analyzer
+ */
+
+if (!defined('ABSPATH')) {
+    exit;
+}
+?>
 
 <div class="wrap">
     <h1><?php _e('Анализ коротких описаний товаров WooCommerce', 'wc-description-analyzer'); ?></h1>
@@ -15,10 +25,12 @@
                 <div class="wcda-stat-card">
                     <h3><?php _e('С описанием', 'wc-description-analyzer'); ?></h3>
                     <div class="wcda-stat-number"><?php echo esc_html($data['total_with_description']); ?></div>
+                    <div><?php printf(__('(%.1f%%)', 'wc-description-analyzer'), ($data['total_with_description'] / max(1, $data['total_products']) * 100)); ?></div>
                 </div>
                 <div class="wcda-stat-card">
                     <h3><?php _e('Без описания', 'wc-description-analyzer'); ?></h3>
                     <div class="wcda-stat-number"><?php echo esc_html($data['total_products'] - $data['total_with_description']); ?></div>
+                    <div><?php printf(__('(%.1f%%)', 'wc-description-analyzer'), (($data['total_products'] - $data['total_with_description']) / max(1, $data['total_products']) * 100)); ?></div>
                 </div>
             </div>
         </div>
@@ -35,6 +47,7 @@
                         <?php _e('Извлечь ВСЕ изображения в галерею', 'wc-description-analyzer'); ?>
                     </button>
                     <span class="spinner"></span>
+                    <div class="wcda-messages"></div>
                 </div>
                 
                 <div class="wcda-product-list-with-checkboxes">
@@ -55,11 +68,6 @@
                             <button type="button" class="button button-small wcda-extract-single-images" data-product-id="<?php echo $product['id']; ?>">
                                 <?php _e('Извлечь в галерею', 'wc-description-analyzer'); ?>
                             </button>
-                            <div class="wcda-preview-images" style="display: none;">
-                                <?php foreach (array_slice($product['images'], 0, 3) as $img): ?>
-                                    <img src="<?php echo esc_url($img); ?>" style="max-width: 50px; max-height: 50px; margin: 2px;">
-                                <?php endforeach; ?>
-                            </div>
                         </div>
                     <?php endforeach; ?>
                 </div>
@@ -73,22 +81,53 @@
             <?php if (!empty($parameter_patterns)): ?>
                 <div class="wcda-bulk-actions">
                     <h3><?php _e('Массовые действия:', 'wc-description-analyzer'); ?></h3>
+                    <div class="wcda-action-options">
+                        <label>
+                            <input type="checkbox" class="wcda-global-use-shortcode" value="1">
+                            <?php _e('Заменить на шорткод [product_dimensions]', 'wc-description-analyzer'); ?>
+                        </label>
+                        <label>
+                            <input type="checkbox" class="wcda-global-attach-to-product" value="1">
+                            <?php _e('Привязать атрибуты к товару', 'wc-description-analyzer'); ?>
+                        </label>
+                    </div>
                     <button type="button" class="button button-primary wcda-bulk-extract-dimensions" data-action="dimensions_to_attributes">
                         <?php _e('Извлечь ВСЕ размеры в атрибуты', 'wc-description-analyzer'); ?>
                     </button>
                     <span class="spinner"></span>
+                    <div class="wcda-messages"></div>
                 </div>
                 
                 <?php foreach ($parameter_patterns as $index => $pattern): ?>
-                    <div class="wcda-pattern-group">
+                    <div class="wcda-pattern-group" data-pattern-index="<?php echo $index; ?>">
                         <h3><?php _e('Шаблон', 'wc-description-analyzer'); ?> #<?php echo $index + 1; ?></h3>
                         <code><?php echo esc_html($pattern['pattern']); ?></code>
                         <p><?php printf(__('Используется в %d товарах', 'wc-description-analyzer'), $pattern['count']); ?></p>
                         
+                        <div class="wcda-pattern-actions">
+                            <label>
+                                <input type="checkbox" class="wcda-pattern-use-shortcode" data-pattern="<?php echo $index; ?>" value="1">
+                                <?php _e('Заменить на шорткод', 'wc-description-analyzer'); ?>
+                            </label>
+                            <label>
+                                <input type="checkbox" class="wcda-pattern-attach-to-product" data-pattern="<?php echo $index; ?>" value="1">
+                                <?php _e('Привязать к товару', 'wc-description-analyzer'); ?>
+                            </label>
+                            <button type="button" class="button button-secondary wcda-bulk-pattern-dimensions" data-pattern="<?php echo $index; ?>">
+                                <?php _e('Извлечь размеры для этого шаблона', 'wc-description-analyzer'); ?>
+                            </button>
+                        </div>
+                        
                         <div class="wcda-products-in-pattern">
+                            <div class="wcda-select-pattern-all" data-pattern="<?php echo $index; ?>">
+                                <label>
+                                    <input type="checkbox" class="wcda-pattern-select-all" data-pattern="<?php echo $index; ?>">
+                                    <?php _e('Выбрать все товары этого шаблона', 'wc-description-analyzer'); ?>
+                                </label>
+                            </div>
                             <?php foreach ($pattern['products'] as $product): ?>
                                 <div class="wcda-product-item" data-product-id="<?php echo $product['id']; ?>">
-                                    <input type="checkbox" class="wcda-product-checkbox" value="<?php echo $product['id']; ?>">
+                                    <input type="checkbox" class="wcda-product-checkbox wcda-product-checkbox-pattern-<?php echo $index; ?>" data-pattern="<?php echo $index; ?>" value="<?php echo $product['id']; ?>">
                                     <a href="<?php echo esc_url($product['edit_link']); ?>" target="_blank">
                                         <?php echo esc_html($product['title']); ?>
                                     </a>
@@ -112,12 +151,6 @@
             <?php else: ?>
                 <p><?php _e('Параметры не найдены.', 'wc-description-analyzer'); ?></p>
             <?php endif; ?>
-        </div>
-        
-        <!-- Результаты обработки -->
-        <div class="wcda-section" id="wcda-results" style="display: none;">
-            <h2><?php _e('Результаты обработки', 'wc-description-analyzer'); ?></h2>
-            <div id="wcda-results-content"></div>
         </div>
         
         <!-- Кнопка обновления -->

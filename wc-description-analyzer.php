@@ -3,10 +3,9 @@
  * Plugin Name: WooCommerce Description Analyzer & Auto-Fixer
  * Plugin URI: https://github.com/Vi-cron/wc-description-analyzer
  * Description: Анализирует короткие описания товаров WooCommerce, выявляет закономерности и автоматически переносит данные в атрибуты и галерею.
- * Version: 2.0.0
+ * Version: 2.0.1
  * Author: Victor R.
  * Text Domain: wc-description-analyzer
- * Domain Path: /languages
  * Requires at least: 5.8
  * Requires PHP: 7.4
  * WC requires at least: 5.0
@@ -301,12 +300,78 @@ function wcda_extract_dimensions_from_description($description) {
     foreach ($matches as $match) {
         $name = $match[1];
         $value = $match[2];
-        // Очищаем значение от запятых и пробелов
         $value = str_replace(',', '.', $value);
         $dimensions[$name] = floatval($value);
     }
     
     return $dimensions;
+}
+
+/**
+ * Преобразует русское название атрибута в английский slug
+ */
+function wcda_sanitize_attribute_slug($name) {
+    $translit = array(
+        'А' => 'A', 'Б' => 'B', 'В' => 'V', 'Г' => 'G', 'Д' => 'D',
+        'Е' => 'E', 'Ё' => 'E', 'Ж' => 'Zh', 'З' => 'Z', 'И' => 'I',
+        'Й' => 'Y', 'К' => 'K', 'Л' => 'L', 'М' => 'M', 'Н' => 'N',
+        'О' => 'O', 'П' => 'P', 'Р' => 'R', 'С' => 'S', 'Т' => 'T',
+        'У' => 'U', 'Ф' => 'F', 'Х' => 'H', 'Ц' => 'Ts', 'Ч' => 'Ch',
+        'Ш' => 'Sh', 'Щ' => 'Sch', 'Ъ' => '', 'Ы' => 'Y', 'Ь' => '',
+        'Э' => 'E', 'Ю' => 'Yu', 'Я' => 'Ya',
+        'а' => 'a', 'б' => 'b', 'в' => 'v', 'г' => 'g', 'д' => 'd',
+        'е' => 'e', 'ё' => 'e', 'ж' => 'zh', 'з' => 'z', 'и' => 'i',
+        'й' => 'y', 'к' => 'k', 'л' => 'l', 'м' => 'm', 'н' => 'n',
+        'о' => 'o', 'п' => 'p', 'р' => 'r', 'с' => 's', 'т' => 't',
+        'у' => 'u', 'ф' => 'f', 'х' => 'h', 'ц' => 'ts', 'ч' => 'ch',
+        'ш' => 'sh', 'щ' => 'sch', 'ъ' => '', 'ы' => 'y', 'ь' => '',
+        'э' => 'e', 'ю' => 'yu', 'я' => 'ya'
+    );
+    $slug = strtr($name, $translit);
+    $slug = preg_replace('/[^a-zA-Z0-9]+/', '-', $slug);
+    $slug = trim($slug, '-');
+    $slug = strtolower($slug);
+    return $slug;
+}
+
+/**
+ * Создание атрибута с английским slug
+ */
+function wcda_create_attribute($attribute_name) {
+    global $wpdb;
+    
+    $attribute_slug = wcda_sanitize_attribute_slug($attribute_name);
+    
+    $attribute_id = $wpdb->get_var($wpdb->prepare("
+        SELECT attribute_id 
+        FROM {$wpdb->prefix}woocommerce_attribute_taxonomies 
+        WHERE attribute_name = %s
+    ", $attribute_slug));
+    
+    if ($attribute_id) {
+        return $attribute_id;
+    }
+    
+    $data = array(
+        'attribute_name' => $attribute_slug,
+        'attribute_label' => $attribute_name,
+        'attribute_type' => 'select',
+        'attribute_orderby' => 'menu_order',
+        'attribute_public' => 1,
+    );
+    
+    $wpdb->insert($wpdb->prefix . 'woocommerce_attribute_taxonomies', $data);
+    delete_transient('wc_attribute_taxonomies');
+    
+    register_taxonomy('pa_' . $attribute_slug, 'product', array(
+        'labels' => array('name' => $attribute_name),
+        'hierarchical' => true,
+        'show_ui' => false,
+        'query_var' => true,
+        'rewrite' => false,
+    ));
+    
+    return $wpdb->insert_id;
 }
 
 // AJAX обработчик: извлечение изображений в галерею
@@ -322,7 +387,6 @@ function wcda_extract_images_to_gallery() {
     
     $description = $product->get_short_description();
     
-    // Извлекаем все изображения из описания
     preg_match_all('/<img[^>]+src=["\']([^"\']+)["\'][^>]*>/i', $description, $matches);
     $image_urls = $matches[1];
     
@@ -334,11 +398,9 @@ function wcda_extract_images_to_gallery() {
     $attachment_ids = $product->get_gallery_image_ids();
     
     foreach ($image_urls as $url) {
-        // Проверяем, не добавлено ли уже это изображение
         $attachment_id = attachment_url_to_postid($url);
         
         if (!$attachment_id) {
-            // Загружаем изображение в медиатеку
             $attachment_id = wcda_upload_image_from_url($url, $product_id);
         }
         
@@ -347,12 +409,10 @@ function wcda_extract_images_to_gallery() {
         }
     }
     
-    // Обновляем галерею
     $new_gallery = array_merge($attachment_ids, $gallery_ids);
     $product->set_gallery_image_ids($new_gallery);
     $product->save();
     
-    // Удаляем изображения из описания
     $clean_description = preg_replace('/<img[^>]+>/i', '', $description);
     $clean_description = preg_replace('/\s+/', ' ', $clean_description);
     wp_update_post(array(
@@ -366,13 +426,15 @@ function wcda_extract_images_to_gallery() {
     ));
 }
 
-// AJAX обработчик: извлечение размеров в атрибуты
+// AJAX обработчик: извлечение размеров в атрибуты (обновленный)
 function wcda_extract_dimensions_to_attributes() {
     check_ajax_referer('wcda_ajax_nonce', 'nonce');
     
     $product_id = intval($_POST['product_id']);
-    $product = wc_get_product($product_id);
+    $use_shortcode = isset($_POST['use_shortcode']) && $_POST['use_shortcode'] === 'true';
+    $attach_to_product = isset($_POST['attach_to_product']) && $_POST['attach_to_product'] === 'true';
     
+    $product = wc_get_product($product_id);
     if (!$product) {
         wp_send_json_error('Товар не найден');
     }
@@ -385,45 +447,49 @@ function wcda_extract_dimensions_to_attributes() {
     }
     
     $updated_attributes = array();
+    $clean_description = $description;
     
     foreach ($dimensions as $name => $value) {
-        // Нормализуем название атрибута
-        $attr_name = sanitize_title($name);
+        $attr_slug = wcda_sanitize_attribute_slug($name);
+        $taxonomy = 'pa_' . $attr_slug;
         
-        // Проверяем существование атрибута
-        $attribute_id = wc_attribute_taxonomy_id_by_name($name);
-        
-        if (!$attribute_id) {
-            // Создаем атрибут, если его нет
-            $attribute_id = wcda_create_attribute($name);
-        }
+        $attribute_id = wcda_create_attribute($name);
         
         if ($attribute_id) {
-            $taxonomy = 'pa_' . sanitize_title($name);
-            
-            // Добавляем значение атрибута
             if (!term_exists($value, $taxonomy)) {
                 wp_insert_term($value, $taxonomy);
             }
             
-            // Устанавливаем атрибут для товара
-            $product_attributes = $product->get_attributes();
-            $product_attributes[$taxonomy] = array(
-                'name' => $taxonomy,
-                'value' => $value,
-                'is_visible' => true,
-                'is_variation' => false,
-                'is_taxonomy' => true
-            );
-            $product->set_attributes($product_attributes);
+            if ($attach_to_product) {
+                $product_attributes = $product->get_attributes();
+                $product_attributes[$taxonomy] = array(
+                    'name' => $taxonomy,
+                    'value' => $value,
+                    'is_visible' => true,
+                    'is_variation' => false,
+                    'is_taxonomy' => true
+                );
+                $product->set_attributes($product_attributes);
+            }
             $updated_attributes[$name] = $value;
         }
+        
+        $pattern = '/(' . preg_quote($name, '/') . '):\s*[\d\.,]+\s*(?:мм|см|м|mm|cm|m)?/iu';
+        $clean_description = preg_replace($pattern, '', $clean_description);
     }
     
     $product->save();
     
-    // Удаляем размеры из описания
-    $clean_description = preg_replace('/([А-Яа-яA-Za-z\s]+):\s*[\d\.,]+\s*(?:мм|см|м|mm|cm|m)?/iu', '', $description);
+    if ($use_shortcode && !empty($updated_attributes)) {
+        $shortcode = '[product_dimensions]';
+        $clean_description = trim($clean_description);
+        if (!empty($clean_description)) {
+            $clean_description .= "\n\n" . $shortcode;
+        } else {
+            $clean_description = $shortcode;
+        }
+    }
+    
     $clean_description = preg_replace('/\s+/', ' ', $clean_description);
     wp_update_post(array(
         'ID' => $product_id,
@@ -432,16 +498,20 @@ function wcda_extract_dimensions_to_attributes() {
     
     wp_send_json_success(array(
         'message' => 'Размеры успешно перенесены в атрибуты',
-        'attributes' => $updated_attributes
+        'attributes' => $updated_attributes,
+        'shortcode_added' => $use_shortcode,
+        'attached' => $attach_to_product
     ));
 }
 
-// AJAX обработчик: массовая обработка
+// AJAX обработчик: массовая обработка (обновленный)
 function wcda_bulk_process() {
     check_ajax_referer('wcda_ajax_nonce', 'nonce');
     
     $action = sanitize_text_field($_POST['bulk_action']);
     $product_ids = array_map('intval', $_POST['product_ids']);
+    $use_shortcode = isset($_POST['use_shortcode']) && $_POST['use_shortcode'] === 'true';
+    $attach_to_product = isset($_POST['attach_to_product']) && $_POST['attach_to_product'] === 'true';
     
     if (empty($product_ids)) {
         wp_send_json_error('Не выбраны товары');
@@ -463,6 +533,55 @@ function wcda_bulk_process() {
         $description = $product->get_short_description();
         $updated = false;
         
+        if ($action === 'dimensions_to_attributes') {
+            $dimensions = wcda_extract_dimensions_from_description($description);
+            if (!empty($dimensions)) {
+                $clean_description = $description;
+                foreach ($dimensions as $name => $value) {
+                    $attr_slug = wcda_sanitize_attribute_slug($name);
+                    $taxonomy = 'pa_' . $attr_slug;
+                    
+                    wcda_create_attribute($name);
+                    if (!term_exists($value, $taxonomy)) {
+                        wp_insert_term($value, $taxonomy);
+                    }
+                    
+                    if ($attach_to_product) {
+                        $product_attributes = $product->get_attributes();
+                        $product_attributes[$taxonomy] = array(
+                            'name' => $taxonomy,
+                            'value' => $value,
+                            'is_visible' => true,
+                            'is_variation' => false,
+                            'is_taxonomy' => true
+                        );
+                        $product->set_attributes($product_attributes);
+                    }
+                    
+                    $pattern = '/(' . preg_quote($name, '/') . '):\s*[\d\.,]+\s*(?:мм|см|м|mm|cm|m)?/iu';
+                    $clean_description = preg_replace($pattern, '', $clean_description);
+                }
+                
+                if ($use_shortcode && !empty($dimensions)) {
+                    $shortcode = '[product_dimensions]';
+                    $clean_description = trim($clean_description);
+                    if (!empty($clean_description)) {
+                        $clean_description .= "\n\n" . $shortcode;
+                    } else {
+                        $clean_description = $shortcode;
+                    }
+                }
+                
+                $clean_description = preg_replace('/\s+/', ' ', $clean_description);
+                wp_update_post(array(
+                    'ID' => $product_id,
+                    'post_excerpt' => trim($clean_description)
+                ));
+                $product->save();
+                $updated = true;
+            }
+        }
+        
         if ($action === 'images_to_gallery') {
             preg_match_all('/<img[^>]+src=["\']([^"\']+)["\'][^>]*>/i', $description, $matches);
             $image_urls = $matches[1];
@@ -480,39 +599,17 @@ function wcda_bulk_process() {
                 }
                 $product->set_gallery_image_ids($gallery_ids);
                 $description = preg_replace('/<img[^>]+>/i', '', $description);
-                $updated = true;
-            }
-        }
-        
-        if ($action === 'dimensions_to_attributes') {
-            $dimensions = wcda_extract_dimensions_from_description($description);
-            if (!empty($dimensions)) {
-                foreach ($dimensions as $name => $value) {
-                    $taxonomy = 'pa_' . sanitize_title($name);
-                    if (!term_exists($value, $taxonomy)) {
-                        wp_insert_term($value, $taxonomy);
-                    }
-                    $product_attributes = $product->get_attributes();
-                    $product_attributes[$taxonomy] = array(
-                        'name' => $taxonomy,
-                        'value' => $value,
-                        'is_visible' => true,
-                        'is_variation' => false,
-                        'is_taxonomy' => true
-                    );
-                    $product->set_attributes($product_attributes);
-                }
-                $description = preg_replace('/([А-Яа-яA-Za-z\s]+):\s*[\d\.,]+\s*(?:мм|см|м|mm|cm|m)?/iu', '', $description);
+                $description = preg_replace('/\s+/', ' ', $description);
+                wp_update_post(array(
+                    'ID' => $product_id,
+                    'post_excerpt' => trim($description)
+                ));
+                $product->save();
                 $updated = true;
             }
         }
         
         if ($updated) {
-            $product->save();
-            wp_update_post(array(
-                'ID' => $product_id,
-                'post_excerpt' => trim(preg_replace('/\s+/', ' ', $description))
-            ));
             $results['success']++;
             $results['details'][] = $product->get_name();
         } else {
@@ -538,61 +635,19 @@ function wcda_upload_image_from_url($url, $parent_post_id = 0) {
     return $attachment_id;
 }
 
-// Вспомогательная функция: создание атрибута
-function wcda_create_attribute($attribute_name) {
-    global $wpdb;
-    
-    $attribute_name = sanitize_text_field($attribute_name);
-    $attribute_slug = sanitize_title($attribute_name);
-    
-    $attribute_id = $wpdb->get_var($wpdb->prepare("
-        SELECT attribute_id 
-        FROM {$wpdb->prefix}woocommerce_attribute_taxonomies 
-        WHERE attribute_name = %s
-    ", $attribute_slug));
-    
-    if ($attribute_id) {
-        return $attribute_id;
-    }
-    
-    $data = array(
-        'attribute_name' => $attribute_slug,
-        'attribute_label' => $attribute_name,
-        'attribute_type' => 'select',
-        'attribute_orderby' => 'menu_order',
-        'attribute_public' => 1,
-    );
-    
-    $wpdb->insert($wpdb->prefix . 'woocommerce_attribute_taxonomies', $data);
-    
-    // Очищаем кэш атрибутов
-    delete_transient('wc_attribute_taxonomies');
-    
-    // Регистрируем таксономию
-    register_taxonomy('pa_' . $attribute_slug, 'product', array(
-        'labels' => array('name' => $attribute_name),
-        'hierarchical' => true,
-        'show_ui' => false,
-        'query_var' => true,
-        'rewrite' => false,
-    ));
-    
-    return $wpdb->insert_id;
-}
-
 // Подключение стилей и скриптов
 function wcda_admin_scripts($hook) {
     if ('woocommerce_page_wc-description-analyzer' !== $hook) {
         return;
     }
     
-    wp_enqueue_script('wcda-admin-script', plugin_dir_url(__FILE__) . 'admin/js/admin-script.js', array('jquery'), '1.0', true);
+    wp_enqueue_script('wcda-admin-script', plugin_dir_url(__FILE__) . 'admin/js/admin-script.js', array('jquery'), '2.0.1', true);
     wp_localize_script('wcda-admin-script', 'wcda_ajax', array(
         'ajax_url' => admin_url('admin-ajax.php'),
         'nonce' => wp_create_nonce('wcda_ajax_nonce')
     ));
     
-    wp_enqueue_style('wcda-admin-style', plugin_dir_url(__FILE__) . 'admin/css/admin-style.css', array(), '1.0');
+    wp_enqueue_style('wcda-admin-style', plugin_dir_url(__FILE__) . 'admin/css/admin-style.css', array(), '2.0.1');
 }
 add_action('admin_enqueue_scripts', 'wcda_admin_scripts');
 
