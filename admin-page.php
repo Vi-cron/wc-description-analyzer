@@ -1,15 +1,4 @@
-<?php
-/**
- * Шаблон страницы администратора для WooCommerce Description Analyzer
- *
- * @package WC_Description_Analyzer
- */
-
-// Защита от прямого доступа
-if (!defined('ABSPATH')) {
-    exit;
-}
-?>
+<?php if (!defined('ABSPATH')) exit; ?>
 
 <div class="wrap">
     <h1><?php _e('Анализ коротких описаний товаров WooCommerce', 'wc-description-analyzer'); ?></h1>
@@ -26,122 +15,116 @@ if (!defined('ABSPATH')) {
                 <div class="wcda-stat-card">
                     <h3><?php _e('С описанием', 'wc-description-analyzer'); ?></h3>
                     <div class="wcda-stat-number"><?php echo esc_html($data['total_with_description']); ?></div>
-                    <div><?php printf(__('(%.1f%%)', 'wc-description-analyzer'), ($data['total_with_description'] / max(1, $data['total_products']) * 100)); ?></div>
                 </div>
                 <div class="wcda-stat-card">
                     <h3><?php _e('Без описания', 'wc-description-analyzer'); ?></h3>
                     <div class="wcda-stat-number"><?php echo esc_html($data['total_products'] - $data['total_with_description']); ?></div>
-                    <div><?php printf(__('(%.1f%%)', 'wc-description-analyzer'), (($data['total_products'] - $data['total_with_description']) / max(1, $data['total_products']) * 100)); ?></div>
                 </div>
             </div>
         </div>
         
-        <!-- Дублирующиеся описания -->
+        <!-- Изображения в описаниях -->
         <div class="wcda-section">
-            <h2><?php _e('Дублирующиеся описания', 'wc-description-analyzer'); ?></h2>
-            <?php if (empty($duplicates)): ?>
-                <p><?php _e('Дублирующихся описаний не найдено!', 'wc-description-analyzer'); ?></p>
-            <?php else: ?>
-                <p><?php printf(__('Найдено групп дубликатов: %d', 'wc-description-analyzer'), count($duplicates)); ?></p>
-                <?php foreach ($duplicates as $hash => $data): ?>
-                    <div class="wcda-duplicate-item">
-                        <strong><?php _e('Описание:', 'wc-description-analyzer'); ?></strong>
-                        <div style="background: #fff; padding: 10px; margin: 10px 0; border-left: 4px solid #dc3232;">
-                            <?php echo wp_kses_post($data['description']); ?>
+            <h2><?php _e('Изображения в описаниях', 'wc-description-analyzer'); ?></h2>
+            <p><?php printf(__('Найдено товаров с изображениями: %d', 'wc-description-analyzer'), count($html_stats['products_with_images'])); ?></p>
+            
+            <?php if (!empty($html_stats['products_with_images'])): ?>
+                <div class="wcda-bulk-actions">
+                    <h3><?php _e('Массовые действия:', 'wc-description-analyzer'); ?></h3>
+                    <button type="button" class="button button-primary wcda-bulk-extract-images" data-action="images_to_gallery">
+                        <?php _e('Извлечь ВСЕ изображения в галерею', 'wc-description-analyzer'); ?>
+                    </button>
+                    <span class="spinner"></span>
+                </div>
+                
+                <div class="wcda-product-list-with-checkboxes">
+                    <div class="wcda-select-all">
+                        <label>
+                            <input type="checkbox" class="wcda-select-all-checkbox"> 
+                            <?php _e('Выбрать все', 'wc-description-analyzer'); ?>
+                        </label>
+                    </div>
+                    
+                    <?php foreach ($html_stats['products_with_images'] as $product): ?>
+                        <div class="wcda-product-item" data-product-id="<?php echo $product['id']; ?>">
+                            <input type="checkbox" class="wcda-product-checkbox" value="<?php echo $product['id']; ?>">
+                            <a href="<?php echo esc_url($product['edit_link']); ?>" target="_blank" class="wcda-product-title">
+                                <?php echo esc_html($product['title']); ?>
+                            </a>
+                            <span class="wcda-images-count">(<?php echo count($product['images']); ?> <?php _e('изображений', 'wc-description-analyzer'); ?>)</span>
+                            <button type="button" class="button button-small wcda-extract-single-images" data-product-id="<?php echo $product['id']; ?>">
+                                <?php _e('Извлечь в галерею', 'wc-description-analyzer'); ?>
+                            </button>
+                            <div class="wcda-preview-images" style="display: none;">
+                                <?php foreach (array_slice($product['images'], 0, 3) as $img): ?>
+                                    <img src="<?php echo esc_url($img); ?>" style="max-width: 50px; max-height: 50px; margin: 2px;">
+                                <?php endforeach; ?>
+                            </div>
                         </div>
-                        <strong><?php _e('Товары с этим описанием:', 'wc-description-analyzer'); ?></strong>
-                        <div class="wcda-product-list">
-                            <?php foreach ($data['products'] as $product): ?>
-                                <div style="padding: 5px 0;">
-                                    <a href="<?php echo esc_url($product['edit_link']); ?>" target="_blank" class="wcda-product-link">
+                    <?php endforeach; ?>
+                </div>
+            <?php endif; ?>
+        </div>
+        
+        <!-- Параметры и размеры -->
+        <div class="wcda-section">
+            <h2><?php _e('Параметры и размеры (Длина, Глубина, Высота)', 'wc-description-analyzer'); ?></h2>
+            
+            <?php if (!empty($parameter_patterns)): ?>
+                <div class="wcda-bulk-actions">
+                    <h3><?php _e('Массовые действия:', 'wc-description-analyzer'); ?></h3>
+                    <button type="button" class="button button-primary wcda-bulk-extract-dimensions" data-action="dimensions_to_attributes">
+                        <?php _e('Извлечь ВСЕ размеры в атрибуты', 'wc-description-analyzer'); ?>
+                    </button>
+                    <span class="spinner"></span>
+                </div>
+                
+                <?php foreach ($parameter_patterns as $index => $pattern): ?>
+                    <div class="wcda-pattern-group">
+                        <h3><?php _e('Шаблон', 'wc-description-analyzer'); ?> #<?php echo $index + 1; ?></h3>
+                        <code><?php echo esc_html($pattern['pattern']); ?></code>
+                        <p><?php printf(__('Используется в %d товарах', 'wc-description-analyzer'), $pattern['count']); ?></p>
+                        
+                        <div class="wcda-products-in-pattern">
+                            <?php foreach ($pattern['products'] as $product): ?>
+                                <div class="wcda-product-item" data-product-id="<?php echo $product['id']; ?>">
+                                    <input type="checkbox" class="wcda-product-checkbox" value="<?php echo $product['id']; ?>">
+                                    <a href="<?php echo esc_url($product['edit_link']); ?>" target="_blank">
                                         <?php echo esc_html($product['title']); ?>
                                     </a>
-                                    <a href="<?php echo esc_url($product['permalink']); ?>" target="_blank" class="button button-small">
-                                        <?php _e('Просмотр', 'wc-description-analyzer'); ?>
-                                    </a>
+                                    <span class="wcda-dimension-values">
+                                        (<?php 
+                                        $vals = array();
+                                        foreach ($product['values'] as $name => $value) {
+                                            $vals[] = $name . ': ' . $value;
+                                        }
+                                        echo implode(', ', $vals);
+                                        ?>)
+                                    </span>
+                                    <button type="button" class="button button-small wcda-extract-single-dimensions" data-product-id="<?php echo $product['id']; ?>">
+                                        <?php _e('Извлечь размеры', 'wc-description-analyzer'); ?>
+                                    </button>
                                 </div>
                             <?php endforeach; ?>
                         </div>
                     </div>
                 <?php endforeach; ?>
-            <?php endif; ?>
-        </div>
-        
-        <!-- Повторяющиеся фразы -->
-        <div class="wcda-section">
-            <h2><?php _e('Повторяющиеся фразы (минимум 3 слова, встречаются 3+ раз)', 'wc-description-analyzer'); ?></h2>
-            <?php if (empty($repeating_phrases)): ?>
-                <p><?php _e('Повторяющихся фраз не найдено.', 'wc-description-analyzer'); ?></p>
             <?php else: ?>
-                <?php foreach ($repeating_phrases as $phrase_data): ?>
-                    <div class="wcda-phrase-item">
-                        "<?php echo esc_html($phrase_data['phrase']); ?>" 
-                        <strong>(<?php echo esc_html($phrase_data['count']); ?> <?php _e('раз', 'wc-description-analyzer'); ?>)</strong>
-                    </div>
-                <?php endforeach; ?>
+                <p><?php _e('Параметры не найдены.', 'wc-description-analyzer'); ?></p>
             <?php endif; ?>
         </div>
         
-        <!-- HTML-теги в описаниях -->
-        <div class="wcda-section">
-            <h2><?php _e('HTML-теги в описаниях', 'wc-description-analyzer'); ?></h2>
-            
-            <div class="wcda-stats-grid">
-                <div class="wcda-stat-card">
-                    <h3><?php _e('Товаров с HTML', 'wc-description-analyzer'); ?></h3>
-                    <div class="wcda-stat-number"><?php echo esc_html($html_stats['total_with_html']); ?></div>
-                </div>
-                <div class="wcda-stat-card">
-                    <h3><?php _e('Уникальных img тегов', 'wc-description-analyzer'); ?></h3>
-                    <div class="wcda-stat-number"><?php echo count($html_stats['img_tags']); ?></div>
-                </div>
-                <div class="wcda-stat-card">
-                    <h3><?php _e('Уникальных ссылок (a теги)', 'wc-description-analyzer'); ?></h3>
-                    <div class="wcda-stat-number"><?php echo count($html_stats['a_tags']); ?></div>
-                </div>
-            </div>
-            
-            <?php if (!empty($html_stats['products_with_html'])): ?>
-                <h3><?php _e('Товары с HTML-вставками:', 'wc-description-analyzer'); ?></h3>
-                <div class="wcda-product-list" style="max-height: 300px;">
-                    <?php foreach ($html_stats['products_with_html'] as $product): ?>
-                        <div style="padding: 5px 0; border-bottom: 1px solid #eee;">
-                            <a href="<?php echo esc_url($product['edit_link']); ?>" target="_blank" style="text-decoration: none; font-weight: bold;">
-                                <?php echo esc_html($product['title']); ?>
-                            </a>
-                            <span style="color: #666; margin-left: 10px;">
-                                <?php _e('Теги:', 'wc-description-analyzer'); ?> 
-                                <?php echo implode(', ', $product['tags']); ?>
-                            </span>
-                        </div>
-                    <?php endforeach; ?>
-                </div>
-            <?php endif; ?>
-            
-            <?php if (!empty($html_stats['img_tags'])): ?>
-                <h3><?php _e('Примеры найденных изображений:', 'wc-description-analyzer'); ?></h3>
-                <?php 
-                $sample_imgs = array_slice($html_stats['img_tags'], 0, 5);
-                foreach ($sample_imgs as $img): 
-                ?>
-                    <div class="wcda-html-item">
-                        <code><?php echo esc_html($img); ?></code>
-                    </div>
-                <?php endforeach; ?>
-            <?php endif; ?>
+        <!-- Результаты обработки -->
+        <div class="wcda-section" id="wcda-results" style="display: none;">
+            <h2><?php _e('Результаты обработки', 'wc-description-analyzer'); ?></h2>
+            <div id="wcda-results-content"></div>
         </div>
         
-        <!-- Информация о сканировании -->
+        <!-- Кнопка обновления -->
         <div class="wcda-section">
-            <h2><?php _e('Действия', 'wc-description-analyzer'); ?></h2>
-            <p><?php _e('Сканирование выполнено на основе текущих данных каталога. Для обновления статистики просто перезагрузите страницу.', 'wc-description-analyzer'); ?></p>
             <a href="<?php echo admin_url('admin.php?page=wc-description-analyzer'); ?>" class="button button-primary">
                 <?php _e('Обновить анализ', 'wc-description-analyzer'); ?>
             </a>
-            
-            <button type="button" class="button" onclick="window.print()" style="margin-left: 10px;">
-                <?php _e('Распечатать отчет', 'wc-description-analyzer'); ?>
-            </button>
         </div>
     </div>
 </div>
