@@ -36,43 +36,56 @@ if (!defined('ABSPATH')) {
         </div>
         
         <!-- Изображения в описаниях -->
-        <div class="wcda-section">
-            <h2><?php _e('Изображения в описаниях', 'wc-description-analyzer'); ?></h2>
-            <p><?php printf(__('Найдено товаров с изображениями: %d', 'wc-description-analyzer'), count($html_stats['products_with_images'])); ?></p>
+		<div class="wcda-section">
+		<h2><?php _e('Изображения в описаниях', 'wc-description-analyzer'); ?></h2>
+		<p><?php printf(__('Найдено товаров с изображениями: %d', 'wc-description-analyzer'), count($html_stats['products_with_images'])); ?></p>
+    
+		<?php if (!empty($html_stats['products_with_images'])): ?>
+        <div class="wcda-bulk-actions">
+            <h3><?php _e('Массовые действия:', 'wc-description-analyzer'); ?></h3>
             
-            <?php if (!empty($html_stats['products_with_images'])): ?>
-                <div class="wcda-bulk-actions">
-                    <h3><?php _e('Массовые действия:', 'wc-description-analyzer'); ?></h3>
-                    <button type="button" class="button button-primary wcda-bulk-extract-images" data-action="images_to_gallery">
-                        <?php _e('Извлечь ВСЕ изображения в галерею', 'wc-description-analyzer'); ?>
-                    </button>
-                    <span class="spinner"></span>
-                    <div class="wcda-messages"></div>
-                </div>
-                
-                <div class="wcda-product-list-with-checkboxes">
-                    <div class="wcda-select-all">
-                        <label>
-                            <input type="checkbox" class="wcda-select-all-checkbox"> 
-                            <?php _e('Выбрать все', 'wc-description-analyzer'); ?>
-                        </label>
-                    </div>
-                    
-                    <?php foreach ($html_stats['products_with_images'] as $product): ?>
-                        <div class="wcda-product-item" data-product-id="<?php echo $product['id']; ?>">
-                            <input type="checkbox" class="wcda-product-checkbox" value="<?php echo $product['id']; ?>">
-                            <a href="<?php echo esc_url($product['edit_link']); ?>" target="_blank" class="wcda-product-title">
-                                <?php echo esc_html($product['title']); ?>
-                            </a>
-                            <span class="wcda-images-count">(<?php echo count($product['images']); ?> <?php _e('изображений', 'wc-description-analyzer'); ?>)</span>
-                            <button type="button" class="button button-small wcda-extract-single-images" data-product-id="<?php echo $product['id']; ?>">
-                                <?php _e('Извлечь в галерею', 'wc-description-analyzer'); ?>
-                            </button>
-                        </div>
-                    <?php endforeach; ?>
-                </div>
-            <?php endif; ?>
+            <!-- НОВЫЕ ОПЦИИ ДЛЯ ИЗОБРАЖЕНИЙ -->
+            <div class="wcda-action-options">
+                <label>
+                    <input type="checkbox" class="wcda-image-use-shortcode" value="1">
+                    <?php _e('Заменить на шорткод [product_images_gallery]', 'wc-description-analyzer'); ?>
+                </label>
+                <label>
+                    <input type="checkbox" class="wcda-image-create-attributes" value="1">
+                    <?php _e('Создать атрибуты из изображений', 'wc-description-analyzer'); ?>
+                </label>
+            </div>
+            
+            <button type="button" class="button button-primary wcda-bulk-extract-images" data-action="images_to_gallery">
+                <?php _e('Извлечь ВСЕ изображения в галерею', 'wc-description-analyzer'); ?>
+            </button>
+            <span class="spinner"></span>
+            <div class="wcda-messages"></div>
         </div>
+        
+        <div class="wcda-product-list-with-checkboxes">
+            <div class="wcda-select-all">
+                <label>
+                    <input type="checkbox" class="wcda-select-all-checkbox"> 
+                    <?php _e('Выбрать все', 'wc-description-analyzer'); ?>
+                </label>
+            </div>
+            
+            <?php foreach ($html_stats['products_with_images'] as $product): ?>
+                <div class="wcda-product-item" data-product-id="<?php echo $product['id']; ?>">
+                    <input type="checkbox" class="wcda-product-checkbox" value="<?php echo $product['id']; ?>">
+                    <a href="<?php echo esc_url($product['edit_link']); ?>" target="_blank" class="wcda-product-title">
+                        <?php echo esc_html($product['title']); ?>
+                    </a>
+                    <span class="wcda-images-count">(<?php echo count($product['images']); ?> <?php _e('изображений', 'wc-description-analyzer'); ?>)</span>
+                    <button type="button" class="button button-small wcda-extract-single-images" data-product-id="<?php echo $product['id']; ?>">
+                        <?php _e('Извлечь в галерею', 'wc-description-analyzer'); ?>
+                    </button>
+                </div>
+            <?php endforeach; ?>
+        </div>
+		<?php endif; ?>
+		</div>
         
         <!-- Параметры и размеры -->
         <div class="wcda-section">

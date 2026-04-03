@@ -3,7 +3,7 @@
  * Plugin Name: WooCommerce Description Analyzer & Auto-Fixer
  * Plugin URI: https://github.com/Vi-cron/wc-description-analyzer
  * Description: Анализирует короткие описания товаров WooCommerce, выявляет закономерности и автоматически переносит данные в атрибуты и галерею.
- * Version: 2.0.1
+ * Version: 2.1.0
  * Author: Victor R.
  * Text Domain: wc-description-analyzer
  * Requires at least: 5.8
@@ -634,6 +634,253 @@ function wcda_upload_image_from_url($url, $parent_post_id = 0) {
     
     return $attachment_id;
 }
+
+// Добавляем новые AJAX обработчики
+add_action('wp_ajax_wcda_get_product_images', 'wcda_get_product_images');
+add_action('wp_ajax_wcda_import_single_image', 'wcda_import_single_image');
+add_action('wp_ajax_wcda_finish_image_import', 'wcda_finish_image_import');
+
+/**
+ * Получить список изображений из описания товара
+ */
+function wcda_get_product_images() {
+    check_ajax_referer('wcda_ajax_nonce', 'nonce');
+    
+    $product_id = intval($_POST['product_id']);
+    $product = wc_get_product($product_id);
+    
+    if (!$product) {
+        wp_send_json_error('Товар не найден');
+    }
+    
+    $description = $product->get_short_description();
+    preg_match_all('/<img[^>]+src=["\']([^"\']+)["\'][^>]*>/i', $description, $matches);
+    $image_urls = $matches[1];
+    
+    if (empty($image_urls)) {
+        wp_send_json_error('Изображения не найдены в описании');
+    }
+    
+    $images_data = array();
+    foreach ($image_urls as $index => $url) {
+        $images_data[] = array(
+            'index' => $index,
+            'url' => $url,
+            'suggested_name' => wcda_suggest_image_name($url),
+            'suggested_slug' => wcda_suggest_image_slug($url)
+        );
+    }
+    
+    wp_send_json_success(array('images' => $images_data));
+}
+
+/**
+ * Импорт одного изображения
+ */
+function wcda_import_single_image() {
+    check_ajax_referer('wcda_ajax_nonce', 'nonce');
+    
+    $product_id = intval($_POST['product_id']);
+    $image_url = esc_url_raw($_POST['image_url']);
+    $custom_name = sanitize_text_field($_POST['custom_name']);
+    $custom_slug = sanitize_title($_POST['custom_slug']);
+    
+    require_once(ABSPATH . 'wp-admin/includes/media.php');
+    require_once(ABSPATH . 'wp-admin/includes/file.php');
+    require_once(ABSPATH . 'wp-admin/includes/image.php');
+    
+    // Пытаемся исправить URL
+    $fixed_url = wcda_fix_image_url($image_url);
+    
+    // Проверяем доступность
+    $headers = @get_headers($fixed_url, 1);
+    if (!$headers || strpos($headers[0], '200') === false) {
+        wp_send_json_error(wcda_analyze_url_error($fixed_url));
+    }
+    
+    // Импортируем
+    $attachment_id = media_sideload_image($fixed_url, $product_id, $custom_name, 'id');
+    
+    if (is_wp_error($attachment_id)) {
+        wp_send_json_error(wcda_handle_import_error($attachment_id, $fixed_url));
+    }
+    
+    // Обновляем название и слаг
+    if ($custom_name || $custom_slug) {
+        $post_data = array(
+            'ID' => $attachment_id,
+            'post_title' => $custom_name ?: wcda_suggest_image_name($image_url),
+            'post_name' => $custom_slug ?: wcda_suggest_image_slug($image_url)
+        );
+        wp_update_post($post_data);
+    }
+    
+    wp_send_json_success(array(
+        'attachment_id' => $attachment_id,
+        'url' => wp_get_attachment_url($attachment_id)
+    ));
+}
+
+/**
+ * Завершение импорта: обновление галереи, атрибутов и описания
+ */
+function wcda_finish_image_import() {
+    check_ajax_referer('wcda_ajax_nonce', 'nonce');
+    
+    $product_id = intval($_POST['product_id']);
+    $gallery_ids = array_map('intval', $_POST['gallery_ids']);
+    $attributes_mapping = $_POST['attributes_mapping'];
+    $use_shortcode = isset($_POST['use_shortcode']) && $_POST['use_shortcode'] === 'true';
+    
+    $product = wc_get_product($product_id);
+    if (!$product) {
+        wp_send_json_error('Товар не найден');
+    }
+    
+    // Обновляем галерею
+    $existing_gallery = $product->get_gallery_image_ids();
+    $new_gallery = array_merge($existing_gallery, $gallery_ids);
+    $product->set_gallery_image_ids($new_gallery);
+    
+    // Создаем атрибуты
+    if (!empty($attributes_mapping)) {
+        $attributes = $product->get_attributes();
+        
+        foreach ($attributes_mapping as $mapping) {
+            if (empty($mapping['name']) || empty($mapping['attachment_id'])) {
+                continue;
+            }
+            
+            $attr_slug = sanitize_title($mapping['slug']);
+            $taxonomy = 'pa_' . $attr_slug;
+            
+            // Создаем атрибут
+            wcda_create_attribute($mapping['name']);
+            
+            // Добавляем термин
+            if (!term_exists($mapping['name'], $taxonomy)) {
+                wp_insert_term($mapping['name'], $taxonomy);
+            }
+            
+            $attributes[$taxonomy] = array(
+                'name' => $taxonomy,
+                'value' => $mapping['name'],
+                'is_visible' => true,
+                'is_variation' => false,
+                'is_taxonomy' => true
+            );
+        }
+        
+        $product->set_attributes($attributes);
+    }
+    
+    $product->save();
+    
+    // Обновляем описание (удаляем img теги и добавляем шорткод)
+    $description = $product->get_short_description();
+    $clean_description = preg_replace('/<img[^>]+>/i', '', $description);
+    $clean_description = preg_replace('/\s+/', ' ', $clean_description);
+    
+    if ($use_shortcode && !empty($gallery_ids)) {
+        $shortcode = '[product_images_gallery]';
+        $clean_description = trim($clean_description);
+        if (!empty($clean_description)) {
+            $clean_description .= "\n\n" . $shortcode;
+        } else {
+            $clean_description = $shortcode;
+        }
+    }
+    
+    wp_update_post(array(
+        'ID' => $product_id,
+        'post_excerpt' => trim($clean_description)
+    ));
+    
+    wp_send_json_success(array(
+        'message' => sprintf(
+            'Успешно импортировано %d изображений в галерею%s',
+            count($gallery_ids),
+            !empty($attributes_mapping) ? ' и создано ' . count($attributes_mapping) . ' атрибутов' : ''
+        )
+    ));
+}
+
+/**
+ * Вспомогательные функции для работы с изображениями
+ */
+function wcda_suggest_image_name($url) {
+    $filename = basename(parse_url($url, PHP_URL_PATH));
+    $name = pathinfo($filename, PATHINFO_FILENAME);
+    $name = preg_replace('/[^a-zA-Z0-9а-яА-Я\s]/u', ' ', $name);
+    $name = preg_replace('/\s+/', ' ', $name);
+    return trim(ucwords($name)) ?: 'Изображение товара';
+}
+
+function wcda_suggest_image_slug($url) {
+    $name = wcda_suggest_image_name($url);
+    return sanitize_title($name);
+}
+
+function wcda_fix_image_url($url) {
+    if (strpos($url, 'https://') === 0) {
+        $http_url = str_replace('https://', 'http://', $url);
+        $headers = @get_headers($http_url, 1);
+        if ($headers && strpos($headers[0], '200') !== false) {
+            return $http_url;
+        }
+    } elseif (strpos($url, 'http://') === 0) {
+        $https_url = str_replace('http://', 'https://', $url);
+        $headers = @get_headers($https_url, 1);
+        if ($headers && strpos($headers[0], '200') !== false) {
+            return $https_url;
+        }
+    }
+    return preg_replace('/\?.*$/', '', urldecode($url));
+}
+
+function wcda_analyze_url_error($url) {
+    $host = parse_url($url, PHP_URL_HOST);
+    $error = "Не удалось загрузить изображение: " . $url . "\n\n";
+    
+    if (strpos($url, 'https://') === 0) {
+        $error .= "• SSL сертификат может быть недействительным. Попробуйте использовать HTTP вместо HTTPS.\n";
+    }
+    
+    if (!in_array($host, array(parse_url(home_url(), PHP_URL_HOST), 'localhost', '127.0.0.1'))) {
+        $error .= "• Изображение на внешнем хосте ({$host}).\n";
+        $error .= "  Добавьте в wp-config.php: define('WP_HTTP_BLOCK_EXTERNAL', false);\n";
+        $error .= "  Или разрешите хост: define('WP_ACCESSIBLE_HOSTS', '{$host}');\n";
+    }
+    
+    $error .= "• Проверьте доступность URL в браузере.\n";
+    $error .= "• Убедитесь, что allow_url_fopen = On в php.ini";
+    
+    return $error;
+}
+
+function wcda_handle_import_error($wp_error, $url) {
+    $error_code = $wp_error->get_error_code();
+    $error_message = $wp_error->get_error_message();
+    
+    $result = "Ошибка: " . $error_message . "\n\n";
+    
+    switch ($error_code) {
+        case 'http_404':
+            $result .= "Файл не найден (404). Проверьте URL: " . $url;
+            break;
+        case 'http_403':
+            $result .= "Доступ запрещен (403). Возможно, требуется авторизация.";
+            break;
+        case 'invalid_image':
+            $result .= "Файл не является корректным изображением.";
+            break;
+        default:
+            $result .= "Скачайте изображение вручную и загрузите через медиабиблиотеку.";
+    }
+    
+    return $result;
+}
+
 
 // Подключение стилей и скриптов
 function wcda_admin_scripts($hook) {
