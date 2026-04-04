@@ -1,0 +1,391 @@
+/* Модальное окно - основные стили */
+.wcda-modal {
+    display: none;
+    position: fixed;
+    z-index: 100000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5);
+    align-items: center;
+    justify-content: center;
+}
+
+.wcda-modal-content {
+    position: relative;
+    background-color: #fff;
+    margin: 0 auto;
+    padding: 0;
+    border-radius: 8px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+    width: 90%;
+    max-width: 1400px;
+    max-height: 90vh;
+    overflow-y: auto;
+    animation: wcda-modal-animate 0.3s ease;
+}
+
+@keyframes wcda-modal-animate {
+    from {
+        opacity: 0;
+        transform: translateY(-50px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.wcda-modal-large {
+    max-width: 1400px !important;
+    width: 95% !important;
+}
+
+/*конец основные стили*/
+
+/*js стили*/
+
+.wcda-image-preview {
+    max-width: 80px;
+    max-height: 80px;
+    cursor: pointer;
+}
+
+.wcda-image-url {
+    font-size: 11px;
+    word-break: break-all;
+    max-width: 200px;
+}
+
+.wcda-availability-badge {
+    display: inline-block;
+    padding: 2px 5px;
+    border-radius: 3px;
+    font-size: 10px;
+    margin-right: 5px;
+}
+
+.wcda-availability-available {
+    background: #d4edda;
+    color: #155724;
+}
+
+.wcda-availability-unavailable {
+    background: #f8d7da;
+    color: #721c24;
+}
+
+.wcda-retry-btn,
+.wcda-manual-upload-btn {
+    margin: 2px;
+    font-size: 11px;
+    padding: 2px 5px;
+}
+
+.wcda-manual-url-input {
+    width: 100%;
+    font-size: 11px;
+    margin-top: 5px;
+    display: none;
+}
+
+.wcda-status-pending {
+    color: #856404;
+    background: #fff3cd;
+    padding: 2px 5px;
+    border-radius: 3px;
+    display: inline-block;
+}
+
+.wcda-status-loading {
+    color: #0c5460;
+    background: #d1ecf1;
+    padding: 2px 5px;
+    border-radius: 3px;
+    display: inline-block;
+}
+
+.wcda-status-success {
+    color: #155724;
+    background: #d4edda;
+    padding: 2px 5px;
+    border-radius: 3px;
+    display: inline-block;
+}
+
+.wcda-status-error {
+    color: #721c24;
+    background: #f8d7da;
+    padding: 2px 5px;
+    border-radius: 3px;
+    display: inline-block;
+}
+
+/*конец js стили*/
+
+.wcda-modal-header {
+    padding: 15px 20px;
+    border-bottom: 1px solid #ddd;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.wcda-modal-header h2,
+.wcda-modal-header h3 {
+    margin: 0;
+}
+
+.wcda-modal-close {
+    font-size: 28px;
+    font-weight: bold;
+    cursor: pointer;
+    color: #aaa;
+    line-height: 1;
+}
+
+.wcda-modal-close:hover {
+    color: #000;
+}
+
+.wcda-modal-body {
+    padding: 20px;
+    max-height: 70vh;
+    overflow-y: auto;
+}
+
+.wcda-modal-footer {
+    padding: 15px 20px;
+    border-top: 1px solid #ddd;
+    text-align: right;
+    background: #f5f5f5;
+    border-radius: 0 0 8px 8px;
+}
+
+.wcda-modal-footer .button {
+    margin-left: 10px;
+}
+
+/* Таблица изображений */
+.wcda-images-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 10px;
+}
+
+.wcda-images-table th,
+.wcda-images-table td {
+    padding: 10px;
+    text-align: left;
+    border-bottom: 1px solid #eee;
+    vertical-align: middle;
+}
+
+.wcda-images-table th {
+    background: #f8f9fa;
+    font-weight: bold;
+    position: sticky;
+    top: 0;
+}
+
+/* Прогресс бар */
+.wcda-progress-bar {
+    width: 100%;
+    height: 20px;
+    background-color: #f0f0f0;
+    border-radius: 10px;
+    overflow: hidden;
+    margin: 10px 0;
+}
+
+.wcda-progress-fill {
+    width: 0%;
+    height: 100%;
+    background-color: #0073aa;
+    transition: width 0.3s ease;
+    border-radius: 10px;
+}
+
+.wcda-import-progress {
+    margin-bottom: 20px;
+    padding: 15px;
+    background: #f0f6fc;
+    border-radius: 5px;
+}
+
+/* Стили для таблицы изображений */
+.wcda-images-table-container {
+    overflow-x: auto;
+    margin-top: 15px;
+}
+
+.wcda-images-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: #fff;
+    font-size: 13px;
+}
+
+.wcda-images-table th,
+.wcda-images-table td {
+    padding: 12px 10px;
+    text-align: left;
+    border-bottom: 1px solid #e5e5e5;
+    vertical-align: middle;
+}
+
+.wcda-images-table th {
+    background: #f1f1f1;
+    font-weight: 600;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+}
+
+.wcda-images-table tr:hover {
+    background: #f9f9f9;
+}
+
+.wcda-image-preview {
+    max-width: 80px;
+    max-height: 80px;
+    border-radius: 4px;
+    border: 1px solid #ddd;
+    cursor: pointer;
+    transition: transform 0.2s;
+}
+
+.wcda-image-preview:hover {
+    transform: scale(1.05);
+}
+
+.wcda-image-url {
+    font-size: 11px;
+    word-break: break-all;
+    color: #666;
+    margin-bottom: 5px;
+}
+
+.wcda-availability-badge {
+    display: inline-block;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 10px;
+    margin-right: 4px;
+    margin-top: 4px;
+}
+
+.wcda-availability-available {
+    background: #d4edda;
+    color: #155724;
+    border: 1px solid #c3e6cb;
+}
+
+.wcda-availability-unavailable {
+    background: #f8d7da;
+    color: #721c24;
+    border: 1px solid #f5c6cb;
+}
+
+.wcda-image-name-input,
+.wcda-image-slug-input {
+    width: 100%;
+    padding: 5px 8px;
+    border: 1px solid #ddd;
+    border-radius: 3px;
+    font-size: 12px;
+}
+
+.wcda-image-name-input:focus,
+.wcda-image-slug-input:focus {
+    border-color: #0073aa;
+    outline: none;
+    box-shadow: 0 0 0 1px #0073aa;
+}
+
+/* Статусы */
+.wcda-status-pending,
+.wcda-status-loading,
+.wcda-status-success,
+.wcda-status-error {
+    display: inline-block;
+    padding: 3px 8px;
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: 500;
+}
+
+.wcda-status-pending {
+    background: #fff3cd;
+    color: #856404;
+}
+
+.wcda-status-loading {
+    background: #d1ecf1;
+    color: #0c5460;
+}
+
+.wcda-status-success {
+    background: #d4edda;
+    color: #155724;
+}
+
+.wcda-status-error {
+    background: #f8d7da;
+    color: #721c24;
+}
+
+/* Кнопки действий */
+.wcda-retry-btn,
+.wcda-manual-upload-btn {
+    margin: 2px !important;
+    font-size: 11px !important;
+    padding: 2px 8px !important;
+    height: auto !important;
+}
+
+.wcda-retry-btn {
+    background: #f0ad4e !important;
+    border-color: #eea236 !important;
+    color: #fff !important;
+}
+
+.wcda-retry-btn:hover {
+    background: #ec971f !important;
+}
+
+.wcda-manual-upload-btn {
+    background: #5bc0de !important;
+    border-color: #46b8da !important;
+    color: #fff !important;
+}
+
+.wcda-manual-upload-btn:hover {
+    background: #31b0d5 !important;
+}
+
+/* Добавьте в конец файла */
+.wcda-error-item {
+    margin-bottom: 10px;
+    padding: 10px;
+    background: #f8d7da;
+    border: 1px solid #f5c6cb;
+    border-radius: 4px;
+    color: #721c24;
+}
+
+.wcda-error-item strong {
+    display: block;
+    margin-bottom: 5px;
+}
+
+.wcda-error-item pre {
+    font-size: 11px;
+    margin-top: 5px;
+    padding: 5px;
+    background: #fff;
+    border-radius: 3px;
+    overflow-x: auto;
+}
