@@ -3,7 +3,7 @@
  * Plugin Name: WooCommerce Description Analyzer & Auto-Fixer
  * Plugin URI: https://github.com/Vi-cron/wc-description-analyzer
  * Description: Анализирует короткие описания товаров WooCommerce, выявляет закономерности и автоматически переносит данные в атрибуты и галерею.
- * Version: 2.1.1
+ * Version: 2.1.3
  * Author: Victor R.
  * Text Domain: wc-description-analyzer
  * Requires at least: 5.8
@@ -677,7 +677,38 @@ add_action('before_woocommerce_init', function() {
     }
 });
 
+// Создание таблицы при активации плагина
+register_activation_hook(__FILE__, 'wcda_create_image_attributes_table');
+function wcda_create_image_attributes_table() {
+    global $wpdb;
+    
+    $table_name = $wpdb->prefix . 'wcda_image_attributes';
+    $charset_collate = $wpdb->get_charset_collate();
+    
+    $sql = "CREATE TABLE IF NOT EXISTS {$table_name} (
+        id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+        image_url_hash VARCHAR(32) NOT NULL,
+        image_url TEXT NOT NULL,
+        attachment_id BIGINT(20) UNSIGNED DEFAULT NULL,
+        attribute_name VARCHAR(255) NOT NULL,
+        attribute_slug VARCHAR(255) NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        use_count INT UNSIGNED DEFAULT 1,
+        PRIMARY KEY (id),
+        UNIQUE KEY idx_url_hash (image_url_hash),
+        KEY idx_attachment (attachment_id),
+        KEY idx_attribute (attribute_slug)
+    ) {$charset_collate}";
+    
+    require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
+    dbDelta($sql);
+}
+
+
 
 require_once plugin_dir_path(__FILE__) . 'image-import/image-import.php';
 // Запускаем инициализацию
 wcda_init_enhanced_image_import();
+
+require_once plugin_dir_path(__FILE__) . 'image-attributes-manager/image-attributes-manager.php';

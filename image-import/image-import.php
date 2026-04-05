@@ -19,6 +19,8 @@ function wcda_init_enhanced_image_import() {
     add_action('wp_ajax_wcda_enhanced_finish_import', 'wcda_enhanced_finish_import');
     add_action('wp_ajax_wcda_enhanced_manual_upload', 'wcda_enhanced_manual_upload');
     add_action('wp_ajax_wcda_generate_slug', 'wcda_generate_slug');
+    add_action('wp_ajax_wcda_get_attachment_url', 'wcda_get_attachment_url');
+    add_action('wp_ajax_wcda_update_image_metadata', 'wcda_update_image_metadata');
 }
 
 /**
@@ -62,6 +64,116 @@ function wcda_normalize_url($url, $product_id = null) {
 }
 
 /**
+ * Получение хэша URL изображения
+ */
+function wcda_get_image_url_hash($url) {
+    return md5($url);
+}
+
+/**
+ * Проверка, существует ли уже изображение с таким URL в таблице wcda_image_attributes
+ */
+function wcda_find_existing_in_table($url) {
+    global $wpdb;
+    
+    $url_hash = wcda_get_image_url_hash($url);
+    $table_name = $wpdb->prefix . 'wcda_image_attributes';
+    
+    $result = $wpdb->get_row($wpdb->prepare(
+        "SELECT * FROM {$table_name} WHERE image_url_hash = %s",
+        $url_hash
+    ));
+    
+    if ($result && $result->attachment_id) {
+        // Проверяем, что вложение все еще существует
+        $attachment = get_post($result->attachment_id);
+        if ($attachment && $attachment->post_type === 'attachment') {
+            return array(
+                'attachment_id' => $result->attachment_id,
+                'attribute_name' => $result->attribute_name,
+                'attribute_slug' => $result->attribute_slug,
+                'use_count' => $result->use_count
+            );
+        } else {
+            // Вложение не существует, удаляем запись
+            $wpdb->delete($table_name, array('id' => $result->id));
+        }
+    }
+    
+    return false;
+}
+
+/**
+ * Сохранение информации об изображении в таблицу
+ */
+function wcda_save_image_to_table($url, $attachment_id, $attribute_name = '', $attribute_slug = '') {
+    global $wpdb;
+    
+    $table_name = $wpdb->prefix . 'wcda_image_attributes';
+    $url_hash = wcda_get_image_url_hash($url);
+    
+    // Проверяем, существует ли уже запись
+    $existing = $wpdb->get_var($wpdb->prepare(
+        "SELECT id FROM {$table_name} WHERE image_url_hash = %s",
+        $url_hash
+    ));
+    
+    if ($existing) {
+        // Обновляем существующую запись
+        $wpdb->update(
+            $table_name,
+            array(
+                'attachment_id' => $attachment_id,
+                'attribute_name' => $attribute_name,
+                'attribute_slug' => $attribute_slug,
+                'use_count' => $wpdb->get_var($wpdb->prepare(
+                    "SELECT use_count + 1 FROM {$table_name} WHERE image_url_hash = %s",
+                    $url_hash
+                )),
+                'updated_at' => current_time('mysql')
+            ),
+            array('image_url_hash' => $url_hash)
+        );
+    } else {
+        // Создаем новую запись
+        $wpdb->insert(
+            $table_name,
+            array(
+                'image_url_hash' => $url_hash,
+                'image_url' => $url,
+                'attachment_id' => $attachment_id,
+                'attribute_name' => $attribute_name,
+                'attribute_slug' => $attribute_slug,
+                'created_at' => current_time('mysql'),
+                'updated_at' => current_time('mysql'),
+                'use_count' => 1
+            )
+        );
+    }
+    
+    return $wpdb->insert_id;
+}
+
+/**
+ * Обновление названия и слага изображения в таблице
+ */
+function wcda_update_image_metadata_in_table($attachment_id, $attribute_name, $attribute_slug) {
+    global $wpdb;
+    
+    $table_name = $wpdb->prefix . 'wcda_image_attributes';
+    
+    $wpdb->update(
+        $table_name,
+        array(
+            'attribute_name' => $attribute_name,
+            'attribute_slug' => $attribute_slug,
+            'updated_at' => current_time('mysql')
+        ),
+        array('attachment_id' => $attachment_id)
+    );
+}
+
+/**
  * Проверка, существует ли уже изображение с таким URL в медиатеке
  */
 function wcda_find_existing_attachment_by_url($url, $product_id = 0) {
@@ -70,6 +182,12 @@ function wcda_find_existing_attachment_by_url($url, $product_id = 0) {
     // Нормализуем URL для поиска
     $normalized_url = wcda_normalize_url($url, $product_id);
     
+    // Сначала проверяем в нашей таблице
+    $table_result = wcda_find_existing_in_table($normalized_url);
+    if ($table_result && $table_result['attachment_id']) {
+        return $table_result['attachment_id'];
+    }
+    
     // Ищем вложение по GUID (полный URL)
     $attachment_id = $wpdb->get_var($wpdb->prepare(
         "SELECT ID FROM {$wpdb->posts} WHERE post_type = 'attachment' AND guid = %s LIMIT 1",
@@ -77,6 +195,8 @@ function wcda_find_existing_attachment_by_url($url, $product_id = 0) {
     ));
     
     if ($attachment_id) {
+        // Сохраняем в таблицу для будущих использований
+        wcda_save_image_to_table($normalized_url, $attachment_id, '', '');
         return $attachment_id;
     }
     
@@ -93,6 +213,8 @@ function wcda_find_existing_attachment_by_url($url, $product_id = 0) {
         ));
         
         if ($attachment_id) {
+            // Сохраняем в таблицу для будущих использований
+            wcda_save_image_to_table($normalized_url, $attachment_id, '', '');
             return $attachment_id;
         }
     }
@@ -166,6 +288,14 @@ function wcda_enhanced_get_product_images() {
         // Нормализуем URL
         $normalized_url = wcda_normalize_url(trim($url), $product_id);
         
+        // Проверяем, есть ли уже такое изображение в таблице
+        $existing_in_table = wcda_find_existing_in_table($normalized_url);
+        
+        if ($existing_in_table && $existing_in_table['attachment_id']) {
+            // Изображение уже есть в таблице - пропускаем его
+            continue;
+        }
+        
         // Проверяем, есть ли уже такое изображение в медиатеке
         $existing_attachment_id = wcda_find_existing_attachment_by_url($normalized_url, $product_id);
         
@@ -178,6 +308,10 @@ function wcda_enhanced_get_product_images() {
             'status' => 'pending',
             'existing_attachment_id' => $existing_attachment_id
         );
+    }
+    
+    if (empty($images_data)) {
+        wp_send_json_error('Все изображения уже были импортированы ранее');
     }
     
     wp_send_json_success(array('images' => $images_data));
@@ -213,9 +347,45 @@ function wcda_enhanced_upload_image($url, $parent_post_id = 0, $custom_name = nu
     require_once(ABSPATH . 'wp-admin/includes/file.php');
     require_once(ABSPATH . 'wp-admin/includes/image.php');
     
-    // Сначала проверяем, нет ли уже такого изображения в медиатеке
+    // Сначала проверяем в нашей таблице
+    $table_result = wcda_find_existing_in_table($url);
+    if ($table_result && $table_result['attachment_id']) {
+        $existing_attachment_id = $table_result['attachment_id'];
+        
+        // Обновляем название и слаг если нужно
+        $post_data = array();
+        $need_update = false;
+        
+        if ($custom_name) {
+            $post_data['post_title'] = $custom_name;
+            $need_update = true;
+        }
+        if ($custom_slug) {
+            $post_data['post_name'] = $custom_slug;
+            $need_update = true;
+        }
+        
+        if ($need_update) {
+            $post_data['ID'] = $existing_attachment_id;
+            wp_update_post($post_data);
+            // Обновляем метаданные в таблице
+            wcda_update_image_metadata_in_table($existing_attachment_id, $custom_name, $custom_slug);
+        }
+        
+        return array(
+            'success' => true,
+            'attachment_id' => $existing_attachment_id,
+            'image_url' => wp_get_attachment_url($existing_attachment_id),
+            'attempt' => 'existing'
+        );
+    }
+    
+    // Проверяем в медиатеке
     $existing_attachment_id = wcda_find_existing_attachment_by_url($url, $parent_post_id);
     if ($existing_attachment_id) {
+        // Сохраняем в таблицу
+        wcda_save_image_to_table($url, $existing_attachment_id, $custom_name, $custom_slug);
+        
         // Обновляем название и слаг если нужно
         $post_data = array();
         $need_update = false;
@@ -378,13 +548,19 @@ function wcda_enhanced_upload_image($url, $parent_post_id = 0, $custom_name = nu
     
     // Возвращаем результат успешной загрузки
     if ($success_result) {
+        $final_name = $custom_name ?: wcda_suggest_image_name($url);
+        $final_slug = $custom_slug ?: wcda_suggest_image_slug($url);
+        
         // Обновляем название и слаг
         $post_data = array(
             'ID' => $success_result['attachment_id'],
-            'post_title' => $custom_name ?: wcda_suggest_image_name($url),
-            'post_name' => $custom_slug ?: wcda_suggest_image_slug($url)
+            'post_title' => $final_name,
+            'post_name' => $final_slug
         );
         wp_update_post($post_data);
+        
+        // Сохраняем в таблицу
+        wcda_save_image_to_table($url, $success_result['attachment_id'], $final_name, $final_slug);
         
         // Возвращаем URL изображения
         $success_result['image_url'] = wp_get_attachment_url($success_result['attachment_id']);
@@ -496,6 +672,9 @@ function wcda_enhanced_finish_import() {
                 'is_variation' => false,
                 'is_taxonomy' => true
             );
+            
+            // Обновляем метаданные в таблице для этого изображения
+            wcda_update_image_metadata_in_table($mapping['attachment_id'], $mapping['name'], $mapping['slug']);
         }
         
         $product->set_attributes($attributes);
@@ -583,4 +762,52 @@ function wcda_generate_slug() {
     $slug = wcda_sanitize_attribute_slug($name);
     
     wp_send_json_success(array('slug' => $slug));
+}
+
+/**
+ * AJAX обработчик для получения URL вложения по ID
+ */
+function wcda_get_attachment_url() {
+    check_ajax_referer('wcda_ajax_nonce', 'nonce');
+    
+    $attachment_id = intval($_POST['attachment_id']);
+    $url = wp_get_attachment_url($attachment_id);
+    
+    if ($url) {
+        wp_send_json_success(array('url' => $url));
+    } else {
+        wp_send_json_error('Вложение не найдено');
+    }
+}
+
+
+function wcda_update_image_metadata() {
+    check_ajax_referer('wcda_ajax_nonce', 'nonce');
+    
+    $attachment_id = intval($_POST['attachment_id']);
+    $attribute_name = sanitize_text_field($_POST['attribute_name']);
+    $attribute_slug = sanitize_title($_POST['attribute_slug']);
+    
+    if (!$attachment_id) {
+        wp_send_json_error('ID вложения не указан');
+    }
+    
+    // Обновляем в таблице
+    wcda_update_image_metadata_in_table($attachment_id, $attribute_name, $attribute_slug);
+    
+    // Также обновляем название в самом вложении
+    if ($attribute_name) {
+        wp_update_post(array(
+            'ID' => $attachment_id,
+            'post_title' => $attribute_name,
+            'post_name' => $attribute_slug
+        ));
+    }
+    
+    wp_send_json_success(array(
+        'message' => 'Метаданные обновлены',
+        'attachment_id' => $attachment_id,
+        'name' => $attribute_name,
+        'slug' => $attribute_slug
+    ));
 }
