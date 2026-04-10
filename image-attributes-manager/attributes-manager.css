@@ -70,6 +70,18 @@
     height: 16px;
 }
 
+/* Поиск */
+.wcda-attr-search {
+    flex: 1;
+    min-width: 200px;
+}
+
+.wcda-attr-search input {
+    width: 100%;
+    max-width: 300px;
+    padding: 5px 10px;
+}
+
 /* Таблица */
 .wcda-attr-table-container {
     background: #fff;
@@ -92,7 +104,41 @@
     vertical-align: middle;
 }
 
-.wcda-attr-preview-img {
+/* Редактируемые ячейки */
+.wcda-editable-cell {
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 4px;
+    transition: background 0.2s;
+    min-width: 100px;
+    display: inline-block;
+}
+
+.wcda-editable-cell:hover {
+    background: #f0f0f1;
+}
+
+.wcda-editable-input {
+    width: 100%;
+    min-width: 120px;
+    padding: 4px 6px;
+    border: 1px solid #2271b1;
+    border-radius: 4px;
+    font-size: 13px;
+}
+
+.wcda-editable-input:focus {
+    outline: none;
+    border-color: #2271b1;
+    box-shadow: 0 0 0 1px #2271b1;
+}
+
+.wcda-saving {
+    opacity: 0.5;
+    pointer-events: none;
+}
+
+.wcda-preview-img {
     width: 50px;
     height: 50px;
     object-fit: cover;
@@ -153,7 +199,7 @@
     background: #f0f0f1;
 }
 
-/* Модальное окно */
+/* Модальное окно для JSON */
 .wcda-attr-modal {
     position: fixed;
     top: 0;
@@ -216,7 +262,8 @@
 }
 
 .wcda-attr-form-field input[type="text"],
-.wcda-attr-form-field input[type="number"] {
+.wcda-attr-form-field input[type="number"],
+.wcda-attr-form-field input[type="file"] {
     width: 100%;
     padding: 8px;
     border: 1px solid #ddd;
@@ -277,5 +324,9 @@
     
     .wcda-attr-url {
         max-width: 150px;
+    }
+    
+    .wcda-editable-input {
+        min-width: 80px;
     }
 }
