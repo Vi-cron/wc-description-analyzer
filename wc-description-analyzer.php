@@ -626,10 +626,10 @@ function wcda_admin_scripts($hook) {
         return;
     }
     
-    wp_enqueue_style('wcda-image-import', plugin_dir_url(__FILE__) . 'image-import/image-import.css', array(), '2.1.0');
+    wp_enqueue_style('wcda-image-import', plugin_dir_url(__FILE__) . 'product-processor/image-import.css', array(), '2.1.0');
 
     // Подключаем улучшенный скрипт импорта изображений
-    wp_enqueue_script('wcda-enhanced-import', plugin_dir_url(__FILE__) . 'image-import/image-import.js', array('jquery'), '2.1.0', true);
+    wp_enqueue_script('wcda-enhanced-import', plugin_dir_url(__FILE__) . 'product-processor/image-import.js', array('jquery'), '2.1.0', true);
     wp_localize_script('wcda-enhanced-import', 'wcda_ajax', array(
         'ajax_url' => admin_url('admin-ajax.php'),
         'nonce' => wp_create_nonce('wcda_ajax_nonce')
@@ -705,10 +705,51 @@ function wcda_create_image_attributes_table() {
     dbDelta($sql);
 }
 
+/**
+ * Синхронизация удаления изображений из таблицы wcda_image_attributes
+ * при удалении файла из медиатеки WordPress
+ * 
+ * @param int $attachment_id ID удаляемого вложения
+ */
+function wcda_sync_delete_from_media_library($attachment_id) {
+    global $wpdb;
+    
+    // Проверяем, что удаляется именно вложение (изображение)
+    $attachment = get_post($attachment_id);
+    if (!$attachment || $attachment->post_type !== 'attachment') {
+        return;
+    }
+    
+    // Проверяем, что это изображение (проверяем MIME тип)
+    $mime_type = get_post_mime_type($attachment_id);
+    if (strpos($mime_type, 'image/') !== 0) {
+        return;
+    }
+    
+    $table_name = $wpdb->prefix . 'wcda_image_attributes';
+    
+    // Удаляем запись из таблицы
+    $deleted = $wpdb->delete(
+        $table_name,
+        array('attachment_id' => $attachment_id),
+        array('%d')
+    );
+    
+}
+
+// Добавляем обработчик удаления вложения
+add_action('delete_attachment', 'wcda_sync_delete_from_media_library', 10, 1);
 
 
-require_once plugin_dir_path(__FILE__) . 'image-import/image-import.php';
+
+require_once plugin_dir_path(__FILE__) . 'product-processor/wc-image-import.php';
 // Запускаем инициализацию
 wcda_init_enhanced_image_import();
 
+require_once plugin_dir_path(__FILE__) . 'product-processor/wc-product-processor.php';
+wcda_register_finish_import_ajax();
+
 require_once plugin_dir_path(__FILE__) . 'image-attributes-manager/image-attributes-manager.php';
+
+require_once plugin_dir_path(__FILE__) . 'simple-image-attribute/simple-image-attribute.php';
+wcda_init_attribute_image_manager_simple();

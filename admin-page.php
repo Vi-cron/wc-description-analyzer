@@ -48,11 +48,15 @@ if (!defined('ABSPATH')) {
             <div class="wcda-action-options">
                 <label>
                     <input type="checkbox" class="wcda-image-use-shortcode" value="1">
-                    <?php _e('Заменить на шорткод [product_images_gallery]', 'wc-description-analyzer'); ?>
+                    <?php _e('Заменить на шорткод', 'wc-description-analyzer'); ?>
                 </label>
                 <label>
                     <input type="checkbox" class="wcda-image-create-attributes" value="1">
                     <?php _e('Создать атрибуты из изображений', 'wc-description-analyzer'); ?>
+                </label>
+                <label>
+                    <input type="checkbox" class="wcda-image-remove-from-desc" value="1">
+                    <?php _e('Удалить значения из описания', 'wc-description-analyzer'); ?>
                 </label>
             </div>
             

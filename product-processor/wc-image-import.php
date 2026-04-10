@@ -16,7 +16,7 @@ function wcda_init_enhanced_image_import() {
     // Регистрируем AJAX обработчики
     add_action('wp_ajax_wcda_enhanced_get_product_images', 'wcda_enhanced_get_product_images');
     add_action('wp_ajax_wcda_enhanced_import_image', 'wcda_enhanced_import_image');
-    add_action('wp_ajax_wcda_enhanced_finish_import', 'wcda_enhanced_finish_import');
+    //add_action('wp_ajax_wcda_enhanced_finish_import', 'wcda_enhanced_finish_import');
     add_action('wp_ajax_wcda_enhanced_manual_upload', 'wcda_enhanced_manual_upload');
     add_action('wp_ajax_wcda_generate_slug', 'wcda_generate_slug');
     add_action('wp_ajax_wcda_get_attachment_url', 'wcda_get_attachment_url');
@@ -254,7 +254,64 @@ function wcda_suggest_image_slug($url) {
 /**
  * Получить список изображений из описания товара
  */
-function wcda_enhanced_get_product_images() {
+
+function wcda_enhanced_get_product_images() {// новая функция
+    check_ajax_referer('wcda_ajax_nonce', 'nonce');
+    
+    $product_id = intval($_POST['product_id']);
+    $product = wc_get_product($product_id);
+    
+    if (!$product) {
+        wp_send_json_error('Товар не найден');
+    }
+    
+    $description = $product->get_short_description();
+    
+    // Расширенный regex для поиска img тегов
+    preg_match_all('/<img[^>]+src=["\']([^"\']+)["\'][^>]*>/i', $description, $matches);
+    $image_urls = $matches[1];
+    
+    // Также ищем URL изображений в style атрибутах (background-image)
+    preg_match_all('/background-image:\s*url\(["\']?([^"\')]+)["\']?\)/i', $description, $style_matches);
+    if (!empty($style_matches[1])) {
+        $image_urls = array_merge($image_urls, $style_matches[1]);
+    }
+    
+    // Убираем дубликаты URL
+    $image_urls = array_unique($image_urls);
+    
+    if (empty($image_urls)) {
+        wp_send_json_error('Изображения не найдены в описании');
+    }
+    
+    $images_data = array();
+    foreach ($image_urls as $index => $url) {
+        // Нормализуем URL
+        $normalized_url = wcda_normalize_url(trim($url), $product_id);
+        
+        // Проверяем, есть ли уже такое изображение в таблице
+        $existing_in_table = wcda_find_existing_in_table($normalized_url);
+        
+        // Проверяем, есть ли уже такое изображение в медиатеке
+        $existing_attachment_id = wcda_find_existing_attachment_by_url($normalized_url, $product_id);
+        
+        // ВСЕГДА добавляем изображение в массив, даже если оно уже существует
+        $images_data[] = array(
+            'index' => $index,
+            'url' => $normalized_url,
+            'original_url' => $url,
+            'suggested_name' => $existing_in_table ? $existing_in_table['attribute_name'] : wcda_suggest_image_name($normalized_url),
+            'suggested_slug' => $existing_in_table ? $existing_in_table['attribute_slug'] : wcda_suggest_image_slug($normalized_url),
+            'status' => $existing_attachment_id ? 'existing' : 'pending',
+            'existing_attachment_id' => $existing_attachment_id ?: ($existing_in_table ? $existing_in_table['attachment_id'] : false)
+        );
+    }
+    
+    // НЕ проверяем на пустоту - даже если все изображения существовали, мы их покажем
+    wp_send_json_success(array('images' => $images_data));
+}
+
+/*function wcda_enhanced_get_product_images() {//старая функция
     check_ajax_referer('wcda_ajax_nonce', 'nonce');
     
     $product_id = intval($_POST['product_id']);
@@ -315,7 +372,7 @@ function wcda_enhanced_get_product_images() {
     }
     
     wp_send_json_success(array('images' => $images_data));
-}
+}*/
 
 /**
  * Проверка доступности URL
@@ -623,94 +680,6 @@ function wcda_enhanced_import_image() {
             'errors' => $result['errors']
         ));
     }
-}
-
-/**
- * AJAX обработчик завершения импорта
- */
-function wcda_enhanced_finish_import() {
-    check_ajax_referer('wcda_ajax_nonce', 'nonce');
-    
-    $product_id = intval($_POST['product_id']);
-    $gallery_ids = array_map('intval', $_POST['gallery_ids']);
-    $attributes_mapping = $_POST['attributes_mapping'];
-    $use_shortcode = isset($_POST['use_shortcode']) && $_POST['use_shortcode'] === 'true';
-    $remove_from_description = isset($_POST['remove_from_description']) && $_POST['remove_from_description'] === 'true';
-    
-    $product = wc_get_product($product_id);
-    if (!$product) {
-        wp_send_json_error('Товар не найден');
-    }
-    
-    // Обновляем галерею (убираем дубликаты)
-    $existing_gallery = $product->get_gallery_image_ids();
-    $new_gallery = array_unique(array_merge($existing_gallery, $gallery_ids));
-    $product->set_gallery_image_ids($new_gallery);
-    
-    // Создаем атрибуты если нужно
-    if (!empty($attributes_mapping)) {
-        $attributes = $product->get_attributes();
-        
-        foreach ($attributes_mapping as $mapping) {
-            if (empty($mapping['name']) || empty($mapping['attachment_id'])) {
-                continue;
-            }
-            
-            $attr_slug = wcda_sanitize_attribute_slug($mapping['slug']);
-            $taxonomy = 'pa_' . $attr_slug;
-            
-            wcda_create_attribute($mapping['name']);
-            
-            if (!term_exists($mapping['name'], $taxonomy)) {
-                wp_insert_term($mapping['name'], $taxonomy);
-            }
-            
-            $attributes[$taxonomy] = array(
-                'name' => $taxonomy,
-                'value' => $mapping['name'],
-                'is_visible' => true,
-                'is_variation' => false,
-                'is_taxonomy' => true
-            );
-            
-            // Обновляем метаданные в таблице для этого изображения
-            wcda_update_image_metadata_in_table($mapping['attachment_id'], $mapping['name'], $mapping['slug']);
-        }
-        
-        $product->set_attributes($attributes);
-    }
-    
-    $product->save();
-    
-    // Обновляем описание
-    if ($remove_from_description) {
-        $description = $product->get_short_description();
-        $clean_description = preg_replace('/<img[^>]+>/i', '', $description);
-        $clean_description = preg_replace('/\s+/', ' ', $clean_description);
-        
-        if ($use_shortcode && !empty($gallery_ids)) {
-            $shortcode = '[product_images_gallery]';
-            $clean_description = trim($clean_description);
-            if (!empty($clean_description)) {
-                $clean_description .= "\n\n" . $shortcode;
-            } else {
-                $clean_description = $shortcode;
-            }
-        }
-        
-        wp_update_post(array(
-            'ID' => $product_id,
-            'post_excerpt' => trim($clean_description)
-        ));
-    }
-    
-    wp_send_json_success(array(
-        'message' => sprintf(
-            'Успешно импортировано %d изображений в галерею%s',
-            count($gallery_ids),
-            !empty($attributes_mapping) ? ' и создано ' . count($attributes_mapping) . ' атрибутов' : ''
-        )
-    ));
 }
 
 /**

@@ -63,7 +63,11 @@ jQuery(document).ready(function ($) {
                     </div>
                     <div class="wcda-modal-footer">
                         <label style="float: left; margin-top: 5px;">
-                            <input type="checkbox" id="wcda-remove-from-desc" checked> Удалить изображения из описания
+                            <input type="checkbox" id="wcda-remove-from-desc"> Удалить изображения из описания
+                        </label>
+                        <label style="float: left; margin-top: 5px;">
+                            <input type="checkbox" id="wcda-image-use-shortcode">
+                            Заменить на шорткод
                         </label>
                         <button type="button" class="button button-primary wcda-enhanced-continue" disabled>Продолжить</button>
                         <button type="button" class="button wcda-enhanced-cancel">Отмена</button>
@@ -72,8 +76,12 @@ jQuery(document).ready(function ($) {
             </div>
         `;
 
-            $('body').append(modalHtml);
+            $('body').append(modalHtml);    
             this.modal = $('#wcda-enhanced-import-modal');
+            
+            $('#wcda-image-use-shortcode').prop('checked', $('.wcda-image-use-shortcode').is(':checked'));
+            $('#wcda-remove-from-desc').prop('checked', $('.wcda-image-remove-from-desc').is(':checked'));
+
         },
 
         bindEvents: function () {
@@ -83,12 +91,12 @@ jQuery(document).ready(function ($) {
                 self.modal.hide();
             });
 
-            $('#wcda-enhanced-continue').on('click', function () {
+            $('.wcda-enhanced-continue').on('click', function () {
                 if ($(this).prop('disabled')) return;
                 self.finishImport();
             });
         },
-
+        
         start: function (productId, useShortcode, createAttributes) {
             this.currentProductId = productId;
             this.currentUseShortcode = useShortcode;
@@ -96,25 +104,48 @@ jQuery(document).ready(function ($) {
 
             var self = this;
 
-            // Показываем модальное окно сразу с загрузкой
-            this.showModalWithLoading();
+            // Показываем индикатор загрузки (можно заменить на небольшой лоадер вместо модального окна)
+            this.showLoadingIndicator();
 
             $.post(wcda_ajax.ajax_url, {
                 action: 'wcda_enhanced_get_product_images',
                 product_id: productId,
                 nonce: wcda_ajax.nonce
             }, function (response) {
+                self.hideLoadingIndicator();
+
                 if (response.success) {
                     self.currentImagesData = response.data.images;
+                    //console.log('self.currentImagesData='+self.currentImagesData);
+                    // Проверяем, есть ли изображения для импорта
+                    //console.log('self.currentImagesData=');
+                    //console.log(self.currentImagesData);
+                    if (!self.currentImagesData || self.currentImagesData.length === 0) {
+                        // Все изображения уже в таблице - сразу вызываем finishImport
+                        self.finishImportWithoutModal();
+                        return;
+                    }
+
+                    // Проверяем, есть ли хотя бы одно изображение, которое НЕ существует в медиатеке
+                    var hasNewImages = self.currentImagesData.some(function (img) {
+                        return !img.existing_attachment_id;
+                    });
+
+                    if (!hasNewImages) {
+                        // Все изображения уже существуют в медиатеке - сразу вызываем finishImport
+                        self.finishImportWithoutModal();
+                        return;
+                    }
+                    // Есть новые изображения - показываем модальное окно
                     self.renderImagesTable();
                     self.startAutoImport();
+                    self.modal.css('display', 'flex');
                 } else {
                     self.showMessage(response.data, 'error');
-                    self.modal.hide();
                 }
             }).fail(function () {
+                self.hideLoadingIndicator();
                 self.showMessage('Ошибка загрузки данных', 'error');
-                self.modal.hide();
             });
         },
 
@@ -124,185 +155,78 @@ jQuery(document).ready(function ($) {
             this.modal.css('display', 'flex');
         },
 
-        /*
-                renderImagesTable: function () {
-                    var tbody = $('#wcda-enhanced-images-tbody');
-                    tbody.empty();
-        
-                    var self = this;
-                    $('.wcda-total-count').text(this.currentImagesData.length);
-        
-                    this.currentImagesData.forEach(function (img, index) {
-                        var row = $('<tr>');
-        
-                        // Номер
-                        row.append($('<td>').text(index + 1));
-        
-                        // Превью (заглушка)
-                        var previewImg = $('<img>', {
-                            class: 'wcda-image-preview',
-                            src: 'https://via.placeholder.com/80x80?text=Loading...',
-                            'data-url': img.url,
-                            'data-index': index,
-                            style: 'max-width:80px;max-height:80px;'
+        // Показывает индикатор загрузки вместо модального окна
+        showLoadingIndicator: function () {
+            if (!$('#wcda-loading-overlay').length) {
+                $('body').append(`
+                <div id="wcda-loading-overlay">
+                <div>
+                    <span class="spinner is-active" style="float: none; margin: 0 10px 0 0;"></span>
+                    <span>Проверка изображений...</span>
+                </div>
+                </div>
+                `);
+            }
+            $('#wcda-loading-overlay').show();
+        },
+        // Скрывает индикатор загрузки
+        hideLoadingIndicator: function () {
+            $('#wcda-loading-overlay').hide();
+        },
+        // Завершает импорт без показа модального окна
+        finishImportWithoutModal: function () {
+            var self = this;
+            var removeFromDesc = $('.wcda-image-remove-from-desc').is(':checked');
+            var UseShortcode = $('.wcda-image-use-shortcode').is(':checked');
+
+            // Получаем все attachment_id из существующих изображений
+            var galleryIds = [];
+            var attributesMapping = [];
+
+            this.currentImagesData.forEach(function (img, index) {
+                if (img.existing_attachment_id) {
+                    galleryIds.push(img.existing_attachment_id);
+
+                    if (self.currentCreateAttributes) {
+                        attributesMapping.push({
+                            name: img.suggested_name,
+                            slug: img.suggested_slug,
+                            attachment_id: img.existing_attachment_id
                         });
-                        row.append($('<td>').append(previewImg));
-        
-                        // Название с контейнером для индикатора
-                        var nameCell = $('<td>');
-                        var nameInput = $('<input>', {
-                            type: 'text',
-                            class: 'wcda-image-name-input',
-                            value: img.suggested_name,
-                            'data-index': index,
-                            style: 'width: 85%; float: left;'
-                        });
-                        var nameSaveIndicator = $('<span>', {
-                            class: 'wcda-save-indicator',
-                            html: '💾'
-                        });
-                        nameCell.append(nameInput).append(nameSaveIndicator);
-                        row.append(nameCell);
-        
-                        // Слаг с контейнером для индикатора
-                        var slugCell = $('<td>');
-                        var slugInput = $('<input>', {
-                            type: 'text',
-                            class: 'wcda-image-slug-input',
-                            value: img.suggested_slug,
-                            'data-index': index,
-                            style: 'width: 85%; float: left;'
-                        });
-                        var slugSaveIndicator = $('<span>', {
-                            class: 'wcda-save-indicator',
-                            html: '💾'
-                        });
-                        slugCell.append(slugInput).append(slugSaveIndicator);
-                        row.append(slugCell);
-        
-                        // Статус
-                        var statusCell = $('<td>');
-                        statusCell.html('<span class="wcda-status-pending">Ожидает</span>');
-                        row.append(statusCell);
-        
-                        tbody.append(row);
-        
-                        // Функция для обновления метаданных в таблице БД
-                        function updateMetadataInDatabase(attachmentId, name, slug, saveIndicator, type) {
-                            if (!attachmentId) return;
-        
-                            // Показываем индикатор сохранения
-                            if (saveIndicator) {
-                                saveIndicator.html('⏳').css('opacity', '0.7');
-                            }
-        
-                            $.post(wcda_ajax.ajax_url, {
-                                action: 'wcda_update_image_metadata',
-                                attachment_id: attachmentId,
-                                attribute_name: name,
-                                attribute_slug: slug,
-                                nonce: wcda_ajax.nonce
-                            }, function (response) {
-                                if (response.success) {
-                                    console.log('Метаданные обновлены:', name, slug);
-                                    if (saveIndicator) {
-                                        saveIndicator.html('✓').css('color', 'green').css('opacity', '1');
-                                        setTimeout(function () {
-                                            saveIndicator.html('💾').css('color', '');
-                                        }, 1500);
-                                    }
-                                } else {
-                                    console.error('Ошибка обновления метаданных:', response.data);
-                                    if (saveIndicator) {
-                                        saveIndicator.html('✗').css('color', 'red').css('opacity', '1');
-                                        setTimeout(function () {
-                                            saveIndicator.html('💾').css('color', '');
-                                        }, 1500);
-                                    }
-                                }
-                            }).fail(function () {
-                                console.error('Ошибка соединения при обновлении метаданных');
-                                if (saveIndicator) {
-                                    saveIndicator.html('⚠').css('color', 'orange').css('opacity', '1');
-                                    setTimeout(function () {
-                                        saveIndicator.html('💾').css('color', '');
-                                    }, 1500);
-                                }
-                            });
-                        }
-        
-                        // Дебаунс функция для отложенного сохранения
-                        var saveTimeouts = {};
-        
-                        // Функция сохранения с дебаунсом для каждого поля
-                        function debounceSave(attachmentId, name, slug, saveIndicator, type, fieldIndex) {
-                            var timeoutKey = fieldIndex + '_' + type;
-                            clearTimeout(saveTimeouts[timeoutKey]);
-                            saveTimeouts[timeoutKey] = setTimeout(function () {
-                                updateMetadataInDatabase(attachmentId, name, slug, saveIndicator, type);
-                            }, 800);
-                        }
-        
-                        // Сохраняем attachment_id после успешной загрузки
-                        // Нужно обновить data-attachment-id когда изображение загружено
-                        var checkAttachmentInterval = setInterval(function () {
-                            if (self.currentImagesData[index] && self.currentImagesData[index].attachment_id) {
-                                var attachmentId = self.currentImagesData[index].attachment_id;
-                                nameInput.data('attachment-id', attachmentId);
-                                slugInput.data('attachment-id', attachmentId);
-                                clearInterval(checkAttachmentInterval);
-                            }
-                        }, 100);
-        
-                        // Обработчик изменения названия
-                        var nameTimeoutKey = 'name_' + index;
-                        nameInput.on('input', function () {
-                            var idx = $(this).data('index');
-                            var newName = $(this).val();
-                            var attachmentId = $(this).data('attachment-id');
-        
-                            // Генерируем слаг из названия
-                            var slug = self.transliterateAndSlugify(newName);
-                            var targetSlugInput = $('.wcda-image-slug-input[data-index="' + idx + '"]');
-                            targetSlugInput.val(slug);
-        
-                            // Обновляем data-attachment-id у slugInput
-                            targetSlugInput.data('attachment-id', attachmentId);
-        
-                            if (attachmentId) {
-                                var slugIndicator = targetSlugInput.closest('td').find('.wcda-save-indicator');
-                                var nameIndicator = $(this).closest('td').find('.wcda-save-indicator');
-        
-                                clearTimeout(saveTimeouts[nameTimeoutKey]);
-                                saveTimeouts[nameTimeoutKey] = setTimeout(function () {
-                                    updateMetadataInDatabase(attachmentId, newName, slug, nameIndicator, 'name');
-                                    // Также обновляем слаг в БД
-                                    updateMetadataInDatabase(attachmentId, newName, slug, slugIndicator, 'slug');
-                                }, 800);
-                            }
-                        });
-        
-                        // Обработчик изменения слага
-                        var slugTimeoutKey = 'slug_' + index;
-                        slugInput.on('input', function () {
-                            var idx = $(this).data('index');
-                            var newSlug = $(this).val();
-                            var attachmentId = $(this).data('attachment-id');
-                            var nameInputField = $('.wcda-image-name-input[data-index="' + idx + '"]');
-                            var currentName = nameInputField.val();
-        
-                            if (attachmentId) {
-                                var slugIndicator = $(this).closest('td').find('.wcda-save-indicator');
-        
-                                clearTimeout(saveTimeouts[slugTimeoutKey]);
-                                saveTimeouts[slugTimeoutKey] = setTimeout(function () {
-                                    updateMetadataInDatabase(attachmentId, currentName, newSlug, slugIndicator, 'slug');
-                                }, 800);
-                            }
-                        });
-                    });
-                },
-                */
+                    }
+                }
+            });
+
+            if (galleryIds.length === 0) {
+                self.showMessage('Нет изображений для импорта', 'error');
+                return;
+            }
+
+            // Показываем индикатор сохранения
+            self.showLoadingIndicator();
+            $('#wcda-loading-overlay .spinner').after().find('span:last').text(' Сохранение...');
+
+            $.post(wcda_ajax.ajax_url, {
+                action: 'wcda_enhanced_finish_import',
+                product_id: this.currentProductId,
+                gallery_ids: galleryIds,
+                attributes_mapping: attributesMapping,
+                use_shortcode: UseShortcode,
+                remove_from_description: removeFromDesc,
+                nonce: wcda_ajax.nonce
+            }, function (response) {
+                self.hideLoadingIndicator();
+                if (response.success) {
+                    self.showMessage(response.data.message, 'success');
+                    $('.wcda-product-item[data-product-id="' + self.currentProductId + '"]').addClass('wcda-processed');
+                } else {
+                    self.showMessage(response.data, 'error');
+                }
+            }).fail(function () {
+                self.hideLoadingIndicator();
+                self.showMessage('Ошибка при сохранении', 'error');
+            });
+        },
 
         renderImagesTable: function () {
             var tbody = $('#wcda-enhanced-images-tbody');
@@ -386,7 +310,8 @@ jQuery(document).ready(function ($) {
                             console.log('Метаданные обновлены:', fieldName, '-', name || slug);
                             if (saveIndicator) {
                                 saveIndicator.html('✓').css('color', 'green').css('opacity', '1');
-                                saveIndicator.parent().find('input').css('border-color', '#ddd');
+                                let $td=saveIndicator.parent().removeClass('wcda-status-editing');
+                                    $td.find('input').css('border-color', '#ddd').removeClass('wcda-status-editing');
                                 setTimeout(function () {
                                     saveIndicator.html('💾').css('color', '');
                                 }, 1500);
@@ -447,6 +372,7 @@ jQuery(document).ready(function ($) {
                         var nameIndicator = $(this).closest('td').find('.wcda-save-indicator');
                         var slugIndicator = targetSlugInput.closest('td').find('.wcda-save-indicator');
 
+                        autoSend=true;
                         // Сохраняем название
                         updateMetadataInDatabase(attachmentId, newName, lastSavedSlug, nameIndicator, 'name');
                         // Сохраняем слаг
@@ -458,8 +384,56 @@ jQuery(document).ready(function ($) {
                     }
                 });
 
-                // Добавьте в обработчики input (не blur) для подсветки:
                 nameInput.on('input', function () {
+                    var $this = $(this);
+                    var idx = $this.data('index');
+                    var currentValue = $this.val().trim();
+                    var newName = $this.val().trim();
+                    var slug = self.transliterateAndSlugify(newName);
+                    var targetSlugInput = $('.wcda-image-slug-input[data-index="' + idx + '"]');
+                    var attachmentId = $this.data('attachment-id');
+
+                    // Обновляем слаг в реальном времени
+                    targetSlugInput.val(slug);
+
+                    if (currentValue !== lastSavedName) {
+                        // Меняем стили
+                        $this.css('border-color', '#ff9800').addClass('wcda-status-editing');
+                        $this.closest('td').find('.wcda-save-indicator').html('✏️').css('color', 'orange');
+
+                        // Отменяем предыдущий таймер для этого инпута
+                        var existingTimer = $this.data('save-timer');
+                        if (existingTimer) {
+                            clearTimeout(existingTimer);
+                        }
+
+                        // Устанавливаем новый таймер
+                        var timer = setTimeout(function () {
+                            if ($this.hasClass('wcda-status-editing') && attachmentId) {
+                                var nameIndicator = $this.closest('td').find('.wcda-save-indicator');
+                                var slugIndicator = targetSlugInput.closest('td').find('.wcda-save-indicator');
+
+                                updateMetadataInDatabase(attachmentId, newName, slug, nameIndicator, 'name');
+                                updateMetadataInDatabase(attachmentId, newName, slug, slugIndicator, 'slug');
+
+                                // Обновляем lastSavedName и lastSavedSlug
+                                lastSavedName = newName;
+                                lastSavedSlug = slug;
+                            }
+                            $this.removeData('save-timer');
+                        }, 2000);
+
+                        // Сохраняем таймер в data атрибуте
+                        $this.data('save-timer', timer);
+                    } else {
+                        $this.css('border-color', '#ddd');
+                        $this.closest('td').find('.wcda-save-indicator').html('💾').css('color', '');
+                    }
+                });
+
+                //var nameInputTimer = null;
+                // Добавьте в обработчики input (не blur) для подсветки:
+                /*nameInput.on('input', function () {
                     var currentValue = $(this).val().trim();
                     if (currentValue !== lastSavedName) {
                         var idx = $(this).data('index');
@@ -468,13 +442,32 @@ jQuery(document).ready(function ($) {
                         var targetSlugInput = $('.wcda-image-slug-input[data-index="' + idx + '"]');
                         targetSlugInput.val(slug);
 
-                        $(this).css('border-color', '#ff9800');
-                        $(this).closest('td').find('.wcda-save-indicator').html('✏️').css('color', 'orange');
+                        var inputEl= $(this);
+                        var attachmentId = inputEl.data('attachment-id');
+                        inputEl.css('border-color', '#ff9800').addClass('wcda-status-editing');
+                        inputEl.closest('td').find('.wcda-save-indicator').html('✏️').css('color', 'orange');
+
+                        if (nameInputTimer) clearTimeout(nameInputTimer);
+        
+                        nameInputTimer = setTimeout(function(){
+                            if (inputEl.hasClass('wcda-status-editing')){
+                                var nameIndicator = inputEl.closest('td').find('.wcda-save-indicator');
+                                var slugIndicator = targetSlugInput.closest('td').find('.wcda-save-indicator');
+                                // Сохраняем название
+                                updateMetadataInDatabase(attachmentId, newName, slug, nameIndicator, 'name');
+                                // Сохраняем слаг
+                                updateMetadataInDatabase(attachmentId, newName, slug, slugIndicator, 'slug');
+                                
+                                nameInputTimer = null;
+                            } 
+                        }, 3000);
+                        
+
                     } else {
                         $(this).css('border-color', '#ddd');
                         $(this).closest('td').find('.wcda-save-indicator').html('💾').css('color', '');
                     }
-                });
+                });*/
 
                 // Обработчик потери фокуса для слага
                 slugInput.on('blur', function () {
@@ -491,7 +484,7 @@ jQuery(document).ready(function ($) {
 
                     if (attachmentId) {
                         var slugIndicator = $(this).closest('td').find('.wcda-save-indicator');
-
+                        
                         // Сохраняем слаг (название оставляем как есть)
                         updateMetadataInDatabase(attachmentId, currentName, newSlug, slugIndicator, 'slug');
 
@@ -740,6 +733,7 @@ jQuery(document).ready(function ($) {
             var galleryIds = [];
             var attributesMapping = [];
             var removeFromDesc = $('#wcda-remove-from-desc').is(':checked');
+            var useShortcode = $('#wcda-image-use-shortcode').is(':checked');
 
             this.currentImagesData.forEach(function (img, index) {
                 if (img.attachment_id) {
@@ -762,7 +756,7 @@ jQuery(document).ready(function ($) {
                 product_id: this.currentProductId,
                 gallery_ids: galleryIds,
                 attributes_mapping: attributesMapping,
-                use_shortcode: this.currentUseShortcode,
+                use_shortcode: useShortcode,
                 remove_from_description: removeFromDesc,
                 nonce: wcda_ajax.nonce
             }, function (response) {
@@ -953,7 +947,9 @@ jQuery(document).ready(function ($) {
             var productId = $(this).data('product-id');
             var useShortcode = $('.wcda-image-use-shortcode').is(':checked');
             var createAttributes = $('.wcda-image-create-attributes').is(':checked');
+            var removeFromDesc = $('.wcda-image-remove-from-desc').is(':checked');
 
+            EnhancedImageImport.currentRemoveFromDescription = removeFromDesc;
             EnhancedImageImport.start(productId, useShortcode, createAttributes);
         });
 
